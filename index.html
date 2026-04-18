@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexLink Pro v8.44 - The Performance Polish</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
+        .container { max-width: 500px; margin: auto; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .card { background: #1e293b; padding: 12px; border-radius: 12px; border: 1px solid #334155; }
+        .full-width { grid-column: span 2; }
+        .label { color: #94a3b8; font-size: 0.6rem; text-transform: uppercase; font-weight: bold; margin-bottom: 4px; }
+        .value { font-size: 1.05rem; font-weight: bold; color: #38bdf8; }
+        .ev-value { color: #a855f7; }
+        
+        button { width: 100%; padding: 16px; color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; margin-bottom: 8px; }
+        #connectBtn { background: #2563eb; }
+        #clearBtn { background: #dc2626; font-size: 0.7rem; padding: 6px 12px; border-radius: 6px; float: right; }
+        
+        .log-buttons { display: flex; gap: 10px; margin-top: 8px; }
+        .log-buttons button { margin-top: 0; font-size: 0.75rem; padding: 10px; border: 1px solid; flex: 1; transition: background 0.2s; }
+        #copyLogBtn { background: #0f766e; border-color: #115e59; }
+        #clearLogBtn { background: #334155; border-color: #475569; }
+        
+        .dtc-container { background: #0f172a; border-radius: 8px; padding: 10px; border: 1px solid #475569; clear: both; }
+        .dtc-section { margin-bottom: 8px; font-size: 0.8rem; }
+        .dtc-title { font-weight: bold; font-size: 0.65rem; color: #94a3b8; border-bottom: 1px solid #334155; padding-bottom: 2px; margin-bottom: 5px; }
+        .no-codes { color: #10b981; font-style: italic; }
+
+        .obfcm-row { display: flex; justify-content: space-between; border-bottom: 1px solid #334155; padding-bottom: 4px; margin-bottom: 4px; font-size: 0.85rem; line-height: 1.4; }
+        
+        #log { margin-top: 10px; font-family: monospace; font-size: 0.65rem; color: #a3e635; background: #000; padding: 10px; border-radius: 8px; height: 110px; overflow-y: auto; border: 1px solid #4d7c0f;}
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.44</h2>
+    <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
+
+    <div class="grid">
+        <div class="card"><div class="label">Akun Jännite (12V)</div><div id="val-voltage" class="value">- V</div></div>
+        <div class="card"><div class="label">MIL-Status</div><div id="val-mil" class="value">-</div></div>
+        
+        <div class="card full-width" style="border-left: 4px solid #10b981;">
+            <div class="label">Lambda (O2) -testi</div>
+            <div id="val-lambda" class="value" style="font-size:0.9rem;">-</div>
+        </div>
+
+        <div class="card full-width">
+            <div class="label" style="display:inline-block; margin-top:5px;">Vikakoodit (DTC)</div>
+            <button id="clearBtn" onclick="clearDTCs()">NOLLAA</button>
+            <div class="dtc-container">
+                <div class="dtc-section">
+                    <div class="dtc-title">VAHVISTETUT (03)</div>
+                    <div id="dtc-stored" class="no-codes">Odottaa...</div>
+                </div>
+                <div class="dtc-section">
+                    <div class="dtc-title">ODOTTAVAT (07)</div>
+                    <div id="dtc-pending" class="no-codes">Odottaa...</div>
+                </div>
+                
+                <div id="dtc-desc-container" style="display:none; margin-top: 10px; padding-top: 8px; border-top: 1px dashed #475569; font-size: 0.75rem; color: #cbd5e1;">
+                    <div class="dtc-title" style="margin-bottom:6px;">SELITTEET:</div>
+                    <div id="dtc-descriptions"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card"><div class="label">Valmiustestit</div><div id="val-tests" class="value">-</div></div>
+        <div class="card"><div class="label">Polttoainetyyppi</div><div id="val-fuel-type" class="value">-</div></div>
+
+        <div class="card full-width"><div class="label">VIN / Valmistenumero</div><div id="val-vin" class="value" style="font-size:0.85rem; letter-spacing: 0.5px;">-</div></div>
+        <div class="card full-width"><div class="label">Protokolla</div><div id="val-proto" class="value" style="font-size:0.7rem; color:#94a3b8;">-</div></div>
+
+        <div class="card full-width" style="border-left: 4px solid #f472b6;">
+            <div class="label" style="margin-bottom: 10px;">OBFCM - Elinikäiset kulutustiedot</div>
+            
+            <div class="obfcm-row">
+                <span>Käyttöikäinen kulutus:</span> 
+                <span id="val-obfcm-fuel" class="value">- L</span>
+            </div>
+            <div class="obfcm-row">
+                <span>Käyttöikäinen kilometrimäärä:</span> 
+                <span id="val-obfcm-dist" class="value">- km</span>
+            </div>
+
+            <div id="phev-obfcm-section" style="display:none; margin-top: 10px; border-top: 1px dashed #475569; padding-top: 10px;">
+                <div class="label" style="color: #a855f7; margin-bottom: 8px;">Hybridin / EV Erittely</div>
+                
+                <div class="obfcm-row">
+                    <span>Ajoakun varaus (SOC):</span> 
+                    <span id="val-ev-soc" class="ev-value">- %</span>
+                </div>
+                <div class="obfcm-row">
+                    <span>Kilometrimäärä moottori sammuksissa:</span> 
+                    <span id="val-obfcm-dist-off" class="ev-value">- km</span>
+                </div>
+                <div class="obfcm-row">
+                    <span>Kilometrimäärä moottori käynnissä:</span> 
+                    <span id="val-obfcm-dist-on" class="ev-value">- km</span>
+                </div>
+                <div class="obfcm-row">
+                    <span>Kilometrimäärä moottori lataustilassa:</span> 
+                    <span id="val-obfcm-dist-charge" class="ev-value">- km</span>
+                </div>
+                <div class="obfcm-row">
+                    <span>Kulutus moottori käynnissä:</span> 
+                    <span id="val-obfcm-fuel-on" class="ev-value">- L</span>
+                </div>
+                <div class="obfcm-row">
+                    <span>Kulutus lataustilassa:</span> 
+                    <span id="val-obfcm-fuel-charge" class="ev-value">- L</span>
+                </div>
+                <div class="obfcm-row" style="border-bottom: none;">
+                    <span>Käyttöikäinen latauksen määrä (Grid):</span> 
+                    <span id="val-obfcm-grid" class="ev-value">- kWh</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="log">Valmis.</div>
+    <div class="log-buttons">
+        <button id="copyLogBtn" onclick="copyLog()">KOPIOI LOKI</button>
+        <button id="clearLogBtn" onclick="clearLog()">TYHJENNÄ LOKI</button>
+    </div>
+</div>
+
+<script>
+    let dtcDatabase = {};
+
+    let device, charWrite, charRead;
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    let currentBuffer = "";
+    
+    let lambdaIntegrationOk = false;
+    let foundDTCs = [];
+    
+    let needsLambdaTest = false;
+    let lambdaValues = [];
+    let connectionFailed = false;
+
+    // UI-optimointi: Debounce-logiikka tallennukselle, jotta selain ei tukehdu
+    let saveTimeout;
+    function queueSaveState() {
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(saveState, 500);
+    }
+
+    async function loadDTCDatabase() {
+        try {
+            const cacheBuster = new Date().getTime();
+            const response = await fetch(`vikakoodit.json?v=${cacheBuster}`);
+            if (response.ok) {
+                dtcDatabase = await response.json();
+                console.log("JSON-Tietokanta ladattu (Tuorein versio), koodeja yhteensä:", Object.keys(dtcDatabase).length);
+            } else {
+                console.error("Virhe ladattaessa vikakoodit.json -tiedostoa. HTTP-status:", response.status);
+            }
+        } catch (error) {
+            console.error("Vikakooditietokantaa ei voitu ladata. (Tarkista CORS tai tiedoston sijainti).", error);
+        }
+    }
+
+    function saveState() {
+        const state = {
+            voltage: document.getElementById('val-voltage').innerText,
+            mil: document.getElementById('val-mil').innerText,
+            lambda: document.getElementById('val-lambda').innerHTML,
+            dtcStored: document.getElementById('dtc-stored').innerHTML,
+            dtcStoredClass: document.getElementById('dtc-stored').className,
+            dtcPending: document.getElementById('dtc-pending').innerHTML,
+            dtcPendingClass: document.getElementById('dtc-pending').className,
+            tests: document.getElementById('val-tests').innerText,
+            fuelType: document.getElementById('val-fuel-type').innerText,
+            vin: document.getElementById('val-vin').innerText,
+            proto: document.getElementById('val-proto').innerText,
+            obfcmFuel: document.getElementById('val-obfcm-fuel').innerText,
+            obfcmDist: document.getElementById('val-obfcm-dist').innerText,
+            evSoc: document.getElementById('val-ev-soc').innerText,
+            obfcmDistOff: document.getElementById('val-obfcm-dist-off').innerText,
+            obfcmDistOn: document.getElementById('val-obfcm-dist-on').innerText,
+            obfcmDistCharge: document.getElementById('val-obfcm-dist-charge').innerText,
+            obfcmFuelOn: document.getElementById('val-obfcm-fuel-on').innerText,
+            obfcmFuelCharge: document.getElementById('val-obfcm-fuel-charge').innerText,
+            obfcmGrid: document.getElementById('val-obfcm-grid').innerText,
+            phevDisplay: document.getElementById('phev-obfcm-section').style.display,
+            dtcDescDisplay: document.getElementById('dtc-desc-container').style.display,
+            dtcDescHtml: document.getElementById('dtc-descriptions').innerHTML,
+            logHtml: document.getElementById('log').innerHTML,
+            foundDTCs: foundDTCs
+        };
+        localStorage.setItem('nexlink_state', JSON.stringify(state));
+    }
+
+    function loadState() {
+        const saved = localStorage.getItem('nexlink_state');
+        if (saved) {
+            try {
+                const state = JSON.parse(saved);
+                document.getElementById('val-voltage').innerText = state.voltage || "- V";
+                document.getElementById('val-mil').innerText = state.mil || "-";
+                document.getElementById('val-lambda').innerHTML = state.lambda || "-";
+                document.getElementById('dtc-stored').innerHTML = state.dtcStored || "Odottaa...";
+                document.getElementById('dtc-stored').className = state.dtcStoredClass || "no-codes";
+                document.getElementById('dtc-pending').innerHTML = state.dtcPending || "Odottaa...";
+                document.getElementById('dtc-pending').className = state.dtcPendingClass || "no-codes";
+                document.getElementById('val-tests').innerText = state.tests || "-";
+                document.getElementById('val-fuel-type').innerText = state.fuelType || "-";
+                document.getElementById('val-vin').innerText = state.vin || "-";
+                document.getElementById('val-proto').innerText = state.proto || "-";
+                document.getElementById('val-obfcm-fuel').innerText = state.obfcmFuel || "- L";
+                document.getElementById('val-obfcm-dist').innerText = state.obfcmDist || "- km";
+                document.getElementById('val-ev-soc').innerText = state.evSoc || "- %";
+                document.getElementById('val-obfcm-dist-off').innerText = state.obfcmDistOff || "- km";
+                document.getElementById('val-obfcm-dist-on').innerText = state.obfcmDistOn || "- km";
+                document.getElementById('val-obfcm-dist-charge').innerText = state.obfcmDistCharge || "- km";
+                document.getElementById('val-obfcm-fuel-on').innerText = state.obfcmFuelOn || "- L";
+                document.getElementById('val-obfcm-fuel-charge').innerText = state.obfcmFuelCharge || "- L";
+                document.getElementById('val-obfcm-grid').innerText = state.obfcmGrid || "- kWh";
+                document.getElementById('phev-obfcm-section').style.display = state.phevDisplay || "none";
+                document.getElementById('dtc-desc-container').style.display = state.dtcDescDisplay || "none";
+                document.getElementById('dtc-descriptions').innerHTML = state.dtcDescHtml || "";
+                document.getElementById('log').innerHTML = state.logHtml || "Valmis.";
+                foundDTCs = state.foundDTCs || [];
+                
+                const logBox = document.getElementById('log');
+                logBox.scrollTop = logBox.scrollHeight;
+            } catch (e) {
+                console.error("Virhe tallennuksen lataamisessa", e);
+            }
+        }
+    }
+
+    // UI-optimointi: Käytetään nopeampaa DOM-päivitystä
+    const log = (msg) => { 
+        const logBox = document.getElementById('log');
+        logBox.insertAdjacentHTML('beforeend', `> ${msg}<br>`);
+        logBox.scrollTop = logBox.scrollHeight;
+        queueSaveState(); 
+    };
+
+    function clearLog() {
+        document.getElementById('log').innerHTML = "Valmis.";
+        saveState(); // Välitön tallennus tyhjennyksessä
+    }
+
+    async function copyLog() {
+        const logText = document.getElementById('log').innerText;
+        const btn = document.getElementById('copyLogBtn');
+        try {
+            await navigator.clipboard.writeText(logText);
+            btn.innerText = "KOPIOITU!";
+            btn.style.background = "#16a34a"; 
+            setTimeout(() => {
+                btn.innerText = "KOPIOI LOKI";
+                btn.style.background = "#0f766e"; 
+            }, 2000);
+        } catch (err) {
+            console.error("Kopiointi epäonnistui:", err);
+            alert("Lokin kopiointi epäonnistui selaimen suojausasetusten vuoksi.");
+        }
+    }
+
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+        try {
+            device = await navigator.bluetooth.requestDevice({
+                filters: [{ namePrefix: 'NEXAS' }, { namePrefix: 'NexLink' }, { namePrefix: 'OBD' }, { namePrefix: 'vLinker' }],
+                optionalServices: ['0000fff0-0000-1000-8000-00805f9b34fb', '000018f0-0000-1000-8000-00805f9b34fb']
+            });
+            const gatt = await device.gatt.connect();
+            
+            let service;
+            try {
+                service = await gatt.getPrimaryService('0000fff0-0000-1000-8000-00805f9b34fb');
+            } catch(e) {
+                log("Standardipalvelua ei löytynyt, käytetään vLinker IOS -palvelua...");
+                service = await gatt.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+            }
+            
+            const chars = await service.getCharacteristics();
+            for (const c of chars) {
+                if (c.properties.write || c.properties.writeWithoutResponse) charWrite = c;
+                if (c.properties.notify) charRead = c;
+            }
+            await charRead.startNotifications();
+            charRead.addEventListener('characteristicvaluechanged', (e) => {
+                currentBuffer += decoder.decode(e.target.value);
+                if (currentBuffer.includes(">")) {
+                    let cleanRes = currentBuffer.replace(/>/g, '').trim();
+                    log(`<span style="color:#facc15">RAW: ${cleanRes}</span>`); 
+                    processResponse(cleanRes);
+                    currentBuffer = "";
+                }
+            });
+            await runDiagnostics();
+        } catch (e) { log("Virhe: " + e.message); }
+    });
+
+    function processResponse(res) {
+        let data = res.replace(/SEARCHING\.\.\./g, '').trim();
+
+        if (data.includes("V") && /[0-9]{1,2}\.[0-9]/.test(data)) {
+            let match = data.match(/[0-9]{1,2}\.[0-9]/);
+            if (match) document.getElementById('val-voltage').innerText = match[0] + " V";
+        }
+        
+        if (data.includes("UNABLE TO CONNECT") || data.includes("ERROR")) {
+            connectionFailed = true;
+            document.getElementById('val-proto').innerText = "Yhteys ECUun epäonnistui";
+        }
+        
+        if (data.includes("ISO") || data.includes("CAN") || data.includes("KWP") || data.includes("FAST")) {
+            let protoStr = data.replace(/ATDP\s*/g, '').replace(/AUTO,\s*/g, '').trim();
+            document.getElementById('val-proto').innerText = protoStr;
+        }
+
+        if (/0902\s*NO\s*DATA/.test(data)) {
+            document.getElementById('val-vin').innerText = "Ei tuettu (Ei ECUssa)";
+        }
+
+        if (data.includes("49 02") || data.includes("0: 49")) {
+            let hex = data.replace(/^0902\s?/g, '').replace(/[0-9]14\s/g, '').replace(/[0-9]:\s?/g, '').replace(/49\s02\s[0-9][0-9]\s?/g, '').replace(/[^0-9A-F]/gi, '');
+            let v = ""; 
+            for (let i=0; i<hex.length; i+=2) { 
+                let c = parseInt(hex.substr(i,2),16); 
+                if(c >= 44 && c <= 90) v += String.fromCharCode(c); 
+            }
+            if (v.length > 10) {
+                document.getElementById('val-vin').innerText = v;
+            } else if (data.includes("20 20 20") || data.includes("FF FF FF") || hex.includes("FFFFFF")) {
+                document.getElementById('val-vin').innerText = "Tyhjä (Ei ohjelmoitu ECUun)";
+            }
+        }
+
+        if (data.includes("41 01")) {
+            let matches = [...data.matchAll(/41 01\s+([0-9A-F]{2})\s+([0-9A-F]{2})\s+([0-9A-F]{2})\s+([0-9A-F]{2})/g)];
+            let bestSupported = -1;
+            let bestReady = 0;
+            let bestMil = "OK";
+            let isDiesel = false;
+
+            for (let m of matches) {
+                let byteA = parseInt(m[1], 16);
+                let byteB = parseInt(m[2], 16);
+                let byteC = parseInt(m[3], 16);
+                let byteD = parseInt(m[4], 16);
+                
+                let supportedCount = 0;
+                let readyCount = 0;
+                
+                for (let i = 0; i < 3; i++) {
+                    if ((byteB & (1 << i)) !== 0) { 
+                        supportedCount++;
+                        if ((byteB & (1 << (i + 4))) === 0) { readyCount++; }
+                    }
+                }
+                
+                for (let i = 0; i < 8; i++) {
+                    if ((byteC & (1 << i)) !== 0) { 
+                        supportedCount++;
+                        if ((byteD & (1 << i)) === 0) { readyCount++; }
+                    }
+                }
+                
+                if (supportedCount > bestSupported) {
+                    bestSupported = supportedCount;
+                    bestReady = readyCount;
+                    bestMil = (byteA & 0x80) ? "⚠️ PÄÄLLÄ" : "OK";
+                    isDiesel = (byteB & 0x08) !== 0;
+                }
+            }
+
+            if (bestSupported >= 0) {
+                document.getElementById('val-mil').innerText = bestMil;
+                document.getElementById('val-tests').innerText = bestReady + " / " + bestSupported + " valmis";
+                needsLambdaTest = (bestReady < bestSupported);
+                if (document.getElementById('val-fuel-type').innerText === "-") {
+                    document.getElementById('val-fuel-type').innerText = isDiesel ? "Diesel" : "Bensiini";
+                }
+            } else {
+                document.getElementById('val-tests').innerText = "Ei dataa";
+            }
+        }
+
+        if (data.includes("41 51")) {
+            let p = data.split(/\s+/);
+            let idx = p.indexOf("51");
+            if (p[idx+1]) {
+                let fType = parseInt(p[idx+1], 16);
+                let typeStr = "Tuntematon (" + fType + ")";
+                const fuelTypes = {
+                    1: "Bensiini", 4: "Diesel", 5: "LPG", 6: "CNG", 8: "Sähkö",
+                    9: "Bifuel (Bensiini)", 13: "Bifuel (CNG/Kaasu)", 15: "Hybridi (Bensiini)", 
+                    17: "Hybridi (Diesel)", 18: "Hybridi (Sähkö)", 
+                    19: "Hybridi (Bensiini/Sähkö)", 20: "Hybridi (Diesel/Sähkö)"
+                };
+                if (fuelTypes[fType]) typeStr = fuelTypes[fType];
+                document.getElementById('val-fuel-type').innerText = typeStr;
+            }
+        }
+
+        if (data.includes("41 06")) {
+            let p = data.split(/\s+/);
+            let idx = p.indexOf("06");
+            if (p[idx+1]) {
+                let stft = ((parseInt(p[idx+1], 16) - 128) * 100 / 128).toFixed(1);
+                lambdaValues.push(stft);
+                if (lambdaValues.length > 1 && needsLambdaTest) {
+                    document.getElementById('val-lambda').innerHTML = `<span style="color:#38bdf8;">Seurataan vaihtelua...</span> ${stft} %`;
+                } else {
+                    document.getElementById('val-lambda').innerHTML = `<span style="color:#10b981;">Integraatio OK:</span> ${stft} %`;
+                }
+                lambdaIntegrationOk = true;
+            }
+        }
+
+        if (data.includes("41 14")) {
+            let p = data.split(/\s+/);
+            let idx = p.indexOf("14");
+            if (p[idx+1]) {
+                let volts = (parseInt(p[idx+1], 16) / 200).toFixed(2);
+                if (!lambdaIntegrationOk) {
+                    document.getElementById('val-lambda').innerHTML = `<span style="color:#f59e0b;">Integraatio epäonnistui.</span><br>Jännitetesti OK: ${volts} V`;
+                }
+            }
+        }
+
+        if ((data.startsWith("03") || data.startsWith("43") || /\b0:\s*43\b/.test(data)) && !data.startsWith("09")) {
+            parseCodes(data, "dtc-stored", "43");
+        }
+        if ((data.startsWith("07") || data.startsWith("47") || /\b0:\s*47\b/.test(data)) && !data.startsWith("09")) {
+            parseCodes(data, "dtc-pending", "47");
+        }
+
+        if (/01A6\s*NO\s*DATA/.test(data)) {
+            if (document.getElementById('val-obfcm-dist').innerText === "- km") {
+                document.getElementById('val-obfcm-dist').innerText = "Ei tuettu";
+            }
+        }
+        if (/01A7\s*NO\s*DATA/.test(data)) {
+            if (document.getElementById('val-obfcm-fuel').innerText === "- L") {
+                document.getElementById('val-obfcm-fuel').innerText = "Ei tuettu";
+            }
+        }
+
+        let currentDist = document.getElementById('val-obfcm-dist').innerText;
+        if (/(?:22F4A6|21A6)\s*7F\s*(?:22|21)\s*(?:31|11|12|22|33)/.test(data) && !/\d/.test(currentDist)) {
+            document.getElementById('val-obfcm-dist').innerText = "Estetty (ECU ei salli lukua)";
+        }
+        
+        let currentFuel = document.getElementById('val-obfcm-fuel').innerText;
+        if (/(?:22F4A7|21A7)\s*7F\s*(?:22|21)\s*(?:31|11|12|22|33)/.test(data) && !/\d/.test(currentFuel)) {
+            document.getElementById('val-obfcm-fuel').innerText = "Estetty (ECU ei salli lukua)";
+        }
+
+        let isHybrid = false;
+        let isPlugIn = false;
+
+        if (data.includes("41 A5") || data.includes("62 F4 A5")) {
+            let maxVal = 0; let found = false;
+            let matches = [...data.matchAll(/(?:41 A5|62 F4 A5) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
+            for (let m of matches) {
+                let valStr = m[1] + m[2] + m[3] + m[4];
+                if (!valStr.includes("FFFF")) {
+                    let d = parseInt(valStr, 16) * 0.1;
+                    if (d < 2000000 && d >= maxVal) { maxVal = d; found = true; }
+                }
+            }
+            if (found) { document.getElementById('val-obfcm-dist-off').innerText = maxVal.toFixed(1) + " km"; isHybrid = true; }
+        }
+
+        if (data.includes("41 A6") || data.includes("62 F4 A6")) {
+            let maxVal = 0; let found = false;
+            let matches = [...data.matchAll(/(?:41 A6|62 F4 A6) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
+            for (let m of matches) {
+                let valStr = m[1] + m[2] + m[3] + m[4];
+                if (!valStr.includes("FFFF")) {
+                    let d = parseInt(valStr, 16) * 0.1;
+                    if (d < 2000000 && d >= maxVal) { maxVal = d; found = true; }
+                }
+            }
+            if (found) { document.getElementById('val-obfcm-dist').innerText = Math.round(maxVal) + " km"; }
+        }
+
+        if (data.includes("41 A7") || data.includes("62 F4 A7")) {
+            let maxVal = 0; let found = false;
+            let matches = [...data.matchAll(/(?:41 A7|62 F4 A7) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
+            for (let m of matches) {
+                let valStr = m[1] + m[2] + m[3] + m[4];
+                if (!valStr.includes("FFFF")) {
+                    let f = parseInt(valStr, 16) * 0.01;
+                    if (f < 500000 && f >= maxVal) { maxVal = f; found = true; }
+                }
+            }
+            if (found) { document.getElementById('val-obfcm-fuel').innerText = maxVal.toFixed(2) + " L"; }
+        }
+
+        if (data.includes("41 A8") || data.includes("62 F4 A8")) {
+            let maxVal = 0; let found = false;
+            let matches = [...data.matchAll(/(?:41 A8|62 F4 A8) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
+            for (let m of matches) {
+                let valStr = m[1] + m[2] + m[3] + m[4];
+                if (!valStr.includes("FFFF")) {
+                    let d = parseInt(valStr, 16) * 0.1;
+                    if (d < 2000000 && d >= maxVal) { maxVal = d; found = true; }
+                }
+            }
+            if (found) { document.getElementById('val-obfcm-dist-on').innerText = maxVal.toFixed(1) + " km"; isHybrid = true; }
+        }
+
+        if (data.includes("41 A9") || data.includes("62 F4 A9")) {
+            let maxVal = 0; let found = false;
+            let matches = [...data.matchAll(/(?:41 A9|62 F4 A9) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
+            for (let m of matches) {
+                let valStr = m[1] + m[2] + m[3] + m[4];
+                if (!valStr.includes("FFFF")) {
+                    let d = parseInt(valStr, 16) * 0.1;
+                    if (d < 2000000 && d >= maxVal) { maxVal = d; found = true; }
+                }
+            }
+            if (found) { document.getElementById('val-obfcm-dist-charge').innerText = maxVal.toFixed(1) + " km"; isHybrid = true; isPlugIn = true; }
+        }
+
+        if (data.includes("41 AA") || data.includes("62 F4 AA")) {
+            let maxVal = 0; let found = false;
+            let matches = [...data.matchAll(/(?:41 AA|62 F4 AA) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
+            for (let m of matches) {
+                let valStr = m[1] + m[2] + m[3] + m[4];
+                if (!valStr.includes("FFFF")) {
+                    let f = parseInt(valStr, 16) * 0.01;
+                    if (f < 500000 && f >= maxVal) { maxVal = f; found = true; }
+                }
+            }
+            if (found) { document.getElementById('val-obfcm-fuel-on').innerText = maxVal.toFixed(2) + " L"; isHybrid = true; }
+        }
+
+        if (data.includes("41 AB") || data.includes("62 F4 AB")) {
+            let maxVal = 0; let found = false;
+            let matches = [...data.matchAll(/(?:41 AB|62 F4 AB) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
+            for (let m of matches) {
+                let valStr = m[1] + m[2] + m[3] + m[4];
+                if (!valStr.includes("FFFF")) {
+                    let f = parseInt(valStr, 16) * 0.01;
+                    if (f < 500000 && f >= maxVal) { maxVal = f; found = true; }
+                }
+            }
+            if (found) { document.getElementById('val-obfcm-fuel-charge').innerText = maxVal.toFixed(2) + " L"; isHybrid = true; isPlugIn = true; }
+        }
+
+        if (data.includes("41 AC") || data.includes("62 F4 AC") || data.includes("49 07")) {
+            let maxVal = 0; let found = false;
+            let matches = [...data.matchAll(/(?:41 AC|62 F4 AC|49 07) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
+            for (let m of matches) {
+                let valStr = m[1] + m[2] + m[3] + m[4];
+                if (!valStr.includes("FFFF")) {
+                    let e = parseInt(valStr, 16) * 0.1;
+                    if (e < 500000 && e >= maxVal) { maxVal = e; found = true; }
+                }
+            }
+            if (found) { document.getElementById('val-obfcm-grid').innerText = maxVal.toFixed(1) + " kWh"; isHybrid = true; isPlugIn = true; }
+        }
+
+        if (data.includes("41 5B") || data.includes("62 F4 5B")) {
+            let matches = [...data.matchAll(/(?:41 5B|62 F4 5B) ([0-9A-F]{2})/g)];
+            for (let m of matches) {
+                if (m[1] !== "FF") {
+                    let soc = (parseInt(m[1], 16) * 100 / 255).toFixed(1);
+                    document.getElementById('val-ev-soc').innerText = soc + " %";
+                    isHybrid = true;
+                }
+            }
+        }
+
+        if (isHybrid) {
+            document.getElementById('phev-obfcm-section').style.display = 'block';
+            let currentFuel = document.getElementById('val-fuel-type').innerText;
+            if (currentFuel === "-" || currentFuel === "Bensiini" || currentFuel.includes("Tuntematon")) {
+                if (isPlugIn) {
+                    document.getElementById('val-fuel-type').innerText = "Lataushybridi (PHEV)";
+                } else {
+                    document.getElementById('val-fuel-type').innerText = "Hybridi (HEV)";
+                }
+            }
+        }
+        
+        queueSaveState(); // Debouncoitu tallennus datan käsittelyn jälkeen
+    }
+
+    function parseCodes(res, id, service) {
+        const div = document.getElementById(id);
+        let clean = res.replace(/^(03|07)\s*/g, '').replace(/[0-9A-F]{1,3}\s+[0-9]:/g, '').replace(/[0-9]:/g, '').trim();
+        let ecuResponses = clean.split(new RegExp('\\b' + service + '\\b', 'g')).map(s => s.trim()).filter(s => s.length > 0);
+        let codes = [];
+        for (let ecuRes of ecuResponses) {
+            let hex = ecuRes.split(/\s+/).filter(h => h.length === 2);
+            if (hex.length === 0 || hex.every(h => h === "00")) continue;
+            if (hex.length % 2 !== 0) hex.shift(); 
+            for (let i = 0; i < hex.length - 1; i += 2) {
+                if (hex[i] === "00" && hex[i+1] === "00") continue;
+                let type = ["P","C","B","U"][parseInt(hex[i][0],16)>>2];
+                let code = type + hex[i] + hex[i+1];
+                if (!codes.includes(code)) {
+                    codes.push(`<b style="color:#f87171">${code}</b>`);
+                    if (!foundDTCs.includes(code)) foundDTCs.push(code); 
+                }
+            }
+        }
+        div.innerHTML = codes.length > 0 ? codes.join(', ') : "Ei koodeja.";
+        div.className = codes.length > 0 ? "" : "no-codes";
+        updateDTCDescriptions();
+    }
+
+    function updateDTCDescriptions() {
+        const container = document.getElementById('dtc-desc-container');
+        const descDiv = document.getElementById('dtc-descriptions');
+        if (foundDTCs.length === 0) {
+            container.style.display = 'none';
+            descDiv.innerHTML = '';
+            queueSaveState();
+            return;
+        }
+        let html = '';
+        foundDTCs.forEach(code => {
+            let selite = dtcDatabase[code] || "Tuntematon koodi (Tarkista korjausoppaasta)";
+            html += `<div style="margin-bottom: 4px;"><b style="color:#f87171">${code}</b>: ${selite}</div>`;
+        });
+        descDiv.innerHTML = html;
+        container.style.display = 'block';
+        queueSaveState();
+    }
+
+    async function sendCommand(cmd, customDelay = 400) {
+        if (!charWrite) return;
+        await charWrite.writeValueWithoutResponse(encoder.encode(cmd + '\r'));
+        await new Promise(r => setTimeout(r, customDelay)); 
+    }
+
+    async function runDiagnostics() {
+        document.getElementById('val-voltage').innerText = "- V";
+        document.getElementById('val-mil').innerText = "-";
+        document.getElementById('val-tests').innerText = "-";
+        document.getElementById('val-fuel-type').innerText = "-";
+        document.getElementById('val-vin').innerText = "-";
+        document.getElementById('val-proto').innerText = "-";
+        document.getElementById('val-obfcm-fuel').innerText = "- L";
+        document.getElementById('val-obfcm-dist').innerText = "- km";
+        document.getElementById('val-ev-soc').innerText = "- %";
+        document.getElementById('val-obfcm-dist-off').innerText = "- km";
+        document.getElementById('val-obfcm-dist-on').innerText = "- km";
+        document.getElementById('val-obfcm-dist-charge').innerText = "- km";
+        document.getElementById('val-obfcm-fuel-on').innerText = "- L";
+        document.getElementById('val-obfcm-fuel-charge').innerText = "- L";
+        document.getElementById('val-obfcm-grid').innerText = "- kWh";
+        document.getElementById('dtc-stored').innerText = "Luetaan...";
+        document.getElementById('dtc-stored').className = "no-codes";
+        document.getElementById('dtc-pending').innerText = "Luetaan...";
+        document.getElementById('dtc-pending').className = "no-codes";
+        document.getElementById('val-lambda').innerHTML = "Testataan...";
+        document.getElementById('phev-obfcm-section').style.display = 'none';
+        
+        foundDTCs = [];
+        connectionFailed = false; 
+        
+        document.getElementById('dtc-desc-container').style.display = 'none';
+        lambdaIntegrationOk = false;
+        needsLambdaTest = false;
+        lambdaValues = [];
+        saveState(); // Aloitustila tallennetaan heti
+        
+        log("Vaihe 1: Alustetaan lukija (vLinker tehotoiminto)...");
+        await sendCommand("ATZ", 800); 
+        await sendCommand("ATSP0", 300);
+        await sendCommand("ATAT1", 300); 
+        await sendCommand("ATCAF1", 300); 
+        
+        log("Vaihe 2: Kätellään autoa (odota, voi kestää)...");
+        await sendCommand("0100", 8000); 
+        
+        log("Vaihe 3: Luetaan auton data...");
+        // OBD-OPTIMOINTI: Poistettu 8 redundanttia 22F4-komentoa, säästää yli 3 sekuntia!
+        const cmds = ["ATRV", "0101", "ATDP", "0900", "0902", "03", "07", "0151", "015B", "01A5", "01A6", "01A7", "01A8", "01A9", "01AA", "01AB", "01AC", "22F45B", "0907"];
+        
+        for (const c of cmds) {
+            if (connectionFailed) {
+                log("<span style='color:#ef4444; font-weight:bold;'>YHTEYSVIRHE: ECU ei vastannut. Tarkista, että sytytysvirta on PÄÄLLÄ (ON). Keskeytetään.</span>");
+                break;
+            }
+            let cmdDelay = 400;
+            if (c === "0902" || c === "03" || c === "07") cmdDelay = 1000;
+            await sendCommand(c, cmdDelay); 
+        }
+
+        if (!connectionFailed) {
+            let obfcmDist = document.getElementById('val-obfcm-dist').innerText;
+            let obfcmFuel = document.getElementById('val-obfcm-fuel').innerText;
+            let obfcmDistOn = document.getElementById('val-obfcm-dist-on').innerText;
+
+            if (obfcmDist === "- km" || obfcmDist === "Ei tuettu" || obfcmFuel === "- L" || obfcmFuel === "Ei tuettu" || obfcmDistOn === "- km") {
+                
+                let proto = document.getElementById('val-proto').innerText;
+                
+                if (proto.includes("CAN") || proto.includes("15765") || proto.includes("29") || proto === "-") {
+                    log("<span style='color:#a855f7'>Vaihe 3.5: OBFCM UDS-syväskannaus...</span>");
+                    let restoreHeader = proto.includes("29") ? "AT SH 18DB33F1" : "AT SH 7DF";
+                    
+                    let udsCmds = [];
+                    if (proto.includes("29")) {
+                        udsCmds.push("AT SH 18DB33F1", "AT AR", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+                        udsCmds.push("AT SH 18DA00F1", "AT CRA 18DAF100", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+                    } else {
+                        udsCmds.push("AT SH 7DF", "AT AR", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+                        
+                        const rxTbl = ["7E8", "7E9", "7EA", "7EB", "7EC", "7ED", "7EE", "7EF"];
+                        for (let i = 0; i <= 7; i++) {
+                            udsCmds.push(`AT SH 7E${i}`, `AT CRA ${rxTbl[i]}`, "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+                        }
+                    }
+                    udsCmds.push("AT AR", restoreHeader);
+                    
+                    for (const c of udsCmds) {
+                        if (connectionFailed) break;
+                        await sendCommand(c, 400); 
+                    }
+                } else {
+                    log("<span style='color:#94a3b8'>Vaihe 3.5: Vanhempi protokolla tunnistettu, ohitetaan CAN-syväskannaus...</span>");
+                }
+            }
+
+            if (!connectionFailed) {
+                await sendCommand("0106", 500);
+                await sendCommand("0114", 500);
+
+                if (needsLambdaTest && lambdaValues.length > 0) {
+                    log("Vaihe 4: Osatestejä kesken. Suoritetaan lambdasäädön dynaaminen testi...");
+                    for(let i=0; i<4; i++) {
+                        if (connectionFailed) break;
+                        await sendCommand("0106", 500); 
+                    }
+                    let uniqueValues = new Set(lambdaValues);
+                    let lastVal = lambdaValues[lambdaValues.length - 1];
+                    let valString = lambdaValues.join('% | ') + '%';
+                    if (uniqueValues.size > 1) {
+                        document.getElementById('val-lambda').innerHTML = `<span style="color:#10b981;">Säätö toimii (Vaihtelee):</span> ${lastVal} %<br><span style="font-size:0.75rem; color:#94a3b8;">Mitatut: ${valString}</span>`;
+                    } else {
+                        document.getElementById('val-lambda').innerHTML = `<span style="color:#f59e0b;">Säätö ei reagoi (Staattinen):</span> ${lastVal} %<br><span style="font-size:0.75rem; color:#94a3b8;">Mitatut: ${valString}</span>`;
+                    }
+                }
+            }
+        }
+
+        await new Promise(r => setTimeout(r, 600));
+
+        if (document.getElementById('val-lambda').innerHTML === "Testataan..." || document.getElementById('val-lambda').innerHTML === "Luetaan...") {
+            document.getElementById('val-lambda').innerHTML = `<span style="color:#ef4444;">Ei tuettu / NO DATA</span>`;
+        }
+        if (document.getElementById('dtc-stored').innerText === "Luetaan...") {
+            document.getElementById('dtc-stored').innerHTML = "Ei dataa";
+        }
+        if (document.getElementById('dtc-pending').innerText === "Luetaan...") {
+            document.getElementById('dtc-pending').innerHTML = "Ei dataa";
+        }
+        if (document.getElementById('val-vin').innerText === "-") {
+            document.getElementById('val-vin').innerText = "Ei tuettu / NO DATA";
+        }
+
+        saveState(); // Lopullinen tallennus välittömästi
+        log("Valmis.");
+    }
+
+    async function clearDTCs() {
+        if (confirm("Nollataanko vikakoodit?")) { 
+            await sendCommand("04"); 
+            log("Nollattu."); 
+            document.getElementById('dtc-stored').innerHTML = "Ei koodeja.";
+            document.getElementById('dtc-pending').innerHTML = "Ei koodeja.";
+            foundDTCs = [];
+            document.getElementById('dtc-desc-container').style.display = 'none';
+            saveState(); // Välitön tallennus nollauksen yhteydessä
+        }
+    }
+
+    window.onload = () => {
+        loadState();
+        loadDTCDatabase();
+    };
+</script>
+</body>
+</html>
