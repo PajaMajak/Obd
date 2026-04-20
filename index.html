@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.44 - The Performance Polish</title>
+    <title>NexLink Pro v8.45 - The WWH-OBD & Session Key</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -36,7 +36,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.44</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.45</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -143,7 +143,6 @@
     let lambdaValues = [];
     let connectionFailed = false;
 
-    // UI-optimointi: Debounce-logiikka tallennukselle, jotta selain ei tukehdu
     let saveTimeout;
     function queueSaveState() {
         clearTimeout(saveTimeout);
@@ -235,7 +234,6 @@
         }
     }
 
-    // UI-optimointi: Käytetään nopeampaa DOM-päivitystä
     const log = (msg) => { 
         const logBox = document.getElementById('log');
         logBox.insertAdjacentHTML('beforeend', `> ${msg}<br>`);
@@ -245,7 +243,7 @@
 
     function clearLog() {
         document.getElementById('log').innerHTML = "Valmis.";
-        saveState(); // Välitön tallennus tyhjennyksessä
+        saveState(); 
     }
 
     async function copyLog() {
@@ -587,7 +585,7 @@
             }
         }
         
-        queueSaveState(); // Debouncoitu tallennus datan käsittelyn jälkeen
+        queueSaveState(); 
     }
 
     function parseCodes(res, id, service) {
@@ -669,7 +667,7 @@
         lambdaIntegrationOk = false;
         needsLambdaTest = false;
         lambdaValues = [];
-        saveState(); // Aloitustila tallennetaan heti
+        saveState(); 
         
         log("Vaihe 1: Alustetaan lukija (vLinker tehotoiminto)...");
         await sendCommand("ATZ", 800); 
@@ -681,7 +679,6 @@
         await sendCommand("0100", 8000); 
         
         log("Vaihe 3: Luetaan auton data...");
-        // OBD-OPTIMOINTI: Poistettu 8 redundanttia 22F4-komentoa, säästää yli 3 sekuntia!
         const cmds = ["ATRV", "0101", "ATDP", "0900", "0902", "03", "07", "0151", "015B", "01A5", "01A6", "01A7", "01A8", "01A9", "01AA", "01AB", "01AC", "22F45B", "0907"];
         
         for (const c of cmds) {
@@ -704,26 +701,40 @@
                 let proto = document.getElementById('val-proto').innerText;
                 
                 if (proto.includes("CAN") || proto.includes("15765") || proto.includes("29") || proto === "-") {
-                    log("<span style='color:#a855f7'>Vaihe 3.5: OBFCM UDS-syväskannaus...</span>");
+                    log("<span style='color:#a855f7'>Vaihe 3.5: OBFCM UDS-syväskannaus (Session Unlock)...</span>");
                     let restoreHeader = proto.includes("29") ? "AT SH 18DB33F1" : "AT SH 7DF";
                     
                     let udsCmds = [];
                     if (proto.includes("29")) {
-                        udsCmds.push("AT SH 18DB33F1", "AT AR", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
-                        udsCmds.push("AT SH 18DA00F1", "AT CRA 18DAF100", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+                        udsCmds.push("AT SH 18DB33F1", "AT AR", "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+                        udsCmds.push("AT SH 18DA00F1", "AT CRA 18DAF100", "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
                     } else {
-                        udsCmds.push("AT SH 7DF", "AT AR", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+                        // V8.45 FIX: Lähetetään 1003 (Extended Session) ennen UDS-pyyntöjä!
+                        udsCmds.push("AT SH 7DF", "AT AR", "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
                         
                         const rxTbl = ["7E8", "7E9", "7EA", "7EB", "7EC", "7ED", "7EE", "7EF"];
                         for (let i = 0; i <= 7; i++) {
-                            udsCmds.push(`AT SH 7E${i}`, `AT CRA ${rxTbl[i]}`, "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+                            udsCmds.push(`AT SH 7E${i}`, `AT CRA ${rxTbl[i]}`, "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
                         }
+                        
+                        // V8.45 FIX: WWH-OBD (29-bit) Fallback BMW:lle ja Volvolle
+                        udsCmds.push(
+                            {cmd: "AT SP 7", delay: 800}, // Vaihto WWH-OBD protokollaan
+                            "AT SH 18DB33F1", 
+                            "AT AR", 
+                            {cmd: "1003", delay: 2000}, // Istunnon avaus ja kättely 29-bit puolelle
+                            "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC",
+                            {cmd: "AT SP 0", delay: 800}, // Paluu automaattitilaan
+                            {cmd: "0100", delay: 3000} // Yhteyden palautus standardipuolelle lambdatestiä varten
+                        );
                     }
                     udsCmds.push("AT AR", restoreHeader);
                     
                     for (const c of udsCmds) {
                         if (connectionFailed) break;
-                        await sendCommand(c, 400); 
+                        let cmdStr = typeof c === 'object' ? c.cmd : c;
+                        let cmdDelay = typeof c === 'object' ? c.delay : 400;
+                        await sendCommand(cmdStr, cmdDelay); 
                     }
                 } else {
                     log("<span style='color:#94a3b8'>Vaihe 3.5: Vanhempi protokolla tunnistettu, ohitetaan CAN-syväskannaus...</span>");
@@ -767,7 +778,7 @@
             document.getElementById('val-vin').innerText = "Ei tuettu / NO DATA";
         }
 
-        saveState(); // Lopullinen tallennus välittömästi
+        saveState(); 
         log("Valmis.");
     }
 
@@ -779,7 +790,7 @@
             document.getElementById('dtc-pending').innerHTML = "Ei koodeja.";
             foundDTCs = [];
             document.getElementById('dtc-desc-container').style.display = 'none';
-            saveState(); // Välitön tallennus nollauksen yhteydessä
+            saveState(); 
         }
     }
 
