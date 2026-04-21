@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.46 - The 29-bit Node Sweeper</title>
+    <title>NexLink Pro v8.47 - The Timeout Fix</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -36,7 +36,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.46</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.47</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -708,7 +708,6 @@
                     if (proto.includes("29")) {
                         udsCmds.push("AT SH 18DB33F1", "AT AR", "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
                         
-                        // V8.46 FIX: 29-bit ECU Scatter Scan (Target nodes 00 to 07) Nissanille ja vastaaville
                         for (let i = 0; i <= 7; i++) {
                             let target = i.toString(16).padStart(2, '0').toUpperCase();
                             udsCmds.push(`AT SH 18DA${target}F1`, `AT CRA 18DAF1${target}`, "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
@@ -728,7 +727,7 @@
                             {cmd: "1003", delay: 2000},
                             "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC",
                             {cmd: "AT SP 0", delay: 800},
-                            {cmd: "0100", delay: 3000}
+                            {cmd: "0100", delay: 8000} // V8.47 FIX: Annettu riittävästi aikaa protokollan palautumiseen (STOPPED-virheen korjaus)
                         );
                     }
                     udsCmds.push("AT AR", restoreHeader);
