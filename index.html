@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.47 - The Timeout Fix</title>
+    <title>NexLink Pro v8.48 - The GM Wake-Up Call</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -36,7 +36,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.47</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.48</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -670,13 +670,14 @@
         saveState(); 
         
         log("Vaihe 1: Alustetaan lukija (vLinker tehotoiminto)...");
-        await sendCommand("ATZ", 800); 
-        await sendCommand("ATSP0", 300);
-        await sendCommand("ATAT1", 300); 
-        await sendCommand("ATCAF1", 300); 
+        await sendCommand("ATZ", 1500); // V8.48 FIX: Annetaan piirille 1.5 sekuntia aikaa käynnistyä, ettei ATSP0 -komento katoa bittiavaruuteen!
+        await sendCommand("ATSP0", 400);
+        await sendCommand("ATAT1", 400); 
+        await sendCommand("ATCAF1", 400); 
         
         log("Vaihe 2: Kätellään autoa (odota, voi kestää)...");
-        await sendCommand("0100", 8000); 
+        await sendCommand("0100", 5000); 
+        await sendCommand("0100", 5000); // V8.48 FIX: Tuplakoputus Opelin ja GM:n uneliaille väylille
         
         log("Vaihe 3: Luetaan auton data...");
         const cmds = ["ATRV", "0101", "ATDP", "0900", "0902", "03", "07", "0151", "015B", "01A5", "01A6", "01A7", "01A8", "01A9", "01AA", "01AB", "01AC", "22F45B", "0907"];
@@ -727,7 +728,7 @@
                             {cmd: "1003", delay: 2000},
                             "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC",
                             {cmd: "AT SP 0", delay: 800},
-                            {cmd: "0100", delay: 8000} // V8.47 FIX: Annettu riittävästi aikaa protokollan palautumiseen (STOPPED-virheen korjaus)
+                            {cmd: "0100", delay: 8000} 
                         );
                     }
                     udsCmds.push("AT AR", restoreHeader);
