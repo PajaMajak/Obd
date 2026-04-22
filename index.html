@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.49 - The VAG Gateway</title>
+    <title>NexLink Pro v8.50 - The Smart Scanner</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -36,7 +36,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.49</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.50</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -155,12 +155,12 @@
             const response = await fetch(`vikakoodit.json?v=${cacheBuster}`);
             if (response.ok) {
                 dtcDatabase = await response.json();
-                console.log("JSON-Tietokanta ladattu (Tuorein versio), koodeja yhteensä:", Object.keys(dtcDatabase).length);
+                console.log("JSON-Tietokanta ladattu, koodeja yhteensä:", Object.keys(dtcDatabase).length);
             } else {
                 console.error("Virhe ladattaessa vikakoodit.json -tiedostoa. HTTP-status:", response.status);
             }
         } catch (error) {
-            console.error("Vikakooditietokantaa ei voitu ladata. (Tarkista CORS tai tiedoston sijainti).", error);
+            console.error("Vikakooditietokantaa ei voitu ladata.", error);
         }
     }
 
@@ -298,42 +298,33 @@
         } catch (e) { log("Virhe: " + e.message); }
     });
 
-    // UUSI V8.49 Liukuva ikkuna -algoritmi monikehysdatan ja roskan suodatukseen
     function parseObfcmPayload(data, headers, multiplier, maxLimit) {
         let bestVal = null;
         for (let header of headers) {
             if (!data.includes(header)) continue;
             let parts = data.split(header);
             
-            // Käydään läpi kaikki osumat (ensimmäisen indeksin jälkeiset osat)
             for (let p = 1; p < parts.length; p++) {
                 let raw = parts[p];
                 let tokens = raw.split(/\s+/);
                 let hexBytes = [];
                 
-                // Kerätään vain puhtaat hex-tavut ja jätetään ELM327 rivinumerot (0:, 1:) huomiotta
                 for (let t of tokens) {
                     if (/^[0-9A-F]{2}$/.test(t)) {
                         hexBytes.push(t);
                     }
                 }
                 
-                // Siivotaan CAN-väylän lopun täytetavut (Padding: AA tai 55)
                 while (hexBytes.length > 0 && (hexBytes[hexBytes.length - 1] === "AA" || hexBytes[hexBytes.length - 1] === "55")) {
                     hexBytes.pop();
                 }
                 
-                // Liu'utetaan 4-tavuista (32-bit) lukijaa datan yli
                 for (let i = 0; i <= hexBytes.length - 4; i++) {
                     let valStr = hexBytes[i] + hexBytes[i+1] + hexBytes[i+2] + hexBytes[i+3];
-                    // Hylätään FFFFFFFF (Standardi vikakoodi puuttuvalle datalle)
                     if (valStr !== "FFFFFFFF") {
                         let val = parseInt(valStr, 16) * multiplier;
-                        // Jos arvo on järkevissä rajoissa, tallennetaan maksimiarvo
                         if (val < maxLimit) {
-                            if (bestVal === null || val > bestVal) {
-                                bestVal = val;
-                            }
+                            if (bestVal === null || val > bestVal) bestVal = val;
                         }
                     }
                 }
@@ -342,19 +333,24 @@
         return bestVal;
     }
 
-    // Apufunktio käyttöliittymän päivitykseen
     function updateMaxUI(id, val, unit, precision) {
         if (val === null) return false;
         let el = document.getElementById(id);
         let current = parseFloat(el.innerText);
         
-        // Päivitetään vain, jos uusi arvo on suurempi, tai jos vanha arvo oli "Ei dataa / Estetty"
         if (isNaN(current) || val > current) {
             el.innerText = val.toFixed(precision) + " " + unit;
             return val > 0;
         }
         return current > 0;
     }
+
+    // V8.50 Älykäs testi: Tarkistaa onko data jo löytynyt
+    const isObfcmDataFound = () => {
+        let d = document.getElementById('val-obfcm-dist').innerText;
+        let f = document.getElementById('val-obfcm-fuel').innerText;
+        return (/\d/.test(d) && !d.includes("Ei tuettu")) || (/\d/.test(f) && !f.includes("Ei tuettu"));
+    };
 
     function processResponse(res) {
         let data = res.replace(/SEARCHING\.\.\./g, '').trim();
@@ -374,9 +370,7 @@
             document.getElementById('val-proto').innerText = protoStr;
         }
 
-        if (/0902\s*NO\s*DATA/.test(data)) {
-            document.getElementById('val-vin').innerText = "Ei tuettu (Ei ECUssa)";
-        }
+        if (/0902\s*NO\s*DATA/.test(data)) document.getElementById('val-vin').innerText = "Ei tuettu (Ei ECUssa)";
 
         if (data.includes("49 02") || data.includes("0: 49")) {
             let hex = data.replace(/^0902\s?/g, '').replace(/[0-9]14\s/g, '').replace(/[0-9]:\s?/g, '').replace(/49\s02\s[0-9][0-9]\s?/g, '').replace(/[^0-9A-F]/gi, '');
@@ -493,17 +487,12 @@
         }
 
         if (/01A6\s*NO\s*DATA/.test(data)) {
-            if (document.getElementById('val-obfcm-dist').innerText === "- km") {
-                document.getElementById('val-obfcm-dist').innerText = "Ei tuettu";
-            }
+            if (document.getElementById('val-obfcm-dist').innerText === "- km") document.getElementById('val-obfcm-dist').innerText = "Ei tuettu";
         }
         if (/01A7\s*NO\s*DATA/.test(data)) {
-            if (document.getElementById('val-obfcm-fuel').innerText === "- L") {
-                document.getElementById('val-obfcm-fuel').innerText = "Ei tuettu";
-            }
+            if (document.getElementById('val-obfcm-fuel').innerText === "- L") document.getElementById('val-obfcm-fuel').innerText = "Ei tuettu";
         }
 
-        // Estojen tarkistus (NRC)
         let currentDist = document.getElementById('val-obfcm-dist').innerText;
         if (/(?:22F4A6|21A6)\s*7F\s*(?:22|21)\s*(?:31|11|12|22|33)/.test(data) && !/\d/.test(currentDist)) {
             document.getElementById('val-obfcm-dist').innerText = "Estetty (ECU ei salli lukua)";
@@ -513,7 +502,6 @@
             document.getElementById('val-obfcm-fuel').innerText = "Estetty (ECU ei salli lukua)";
         }
 
-        // --- V8.49 Liukuva OBFCM-purku (Korvaa aiemmat staattiset regexit) ---
         let isHybrid = false;
         let isPlugIn = false;
 
@@ -534,7 +522,6 @@
         if (updateMaxUI('val-obfcm-fuel-charge', parseObfcmPayload(data, ["41 AB", "62 F4 AB"], 0.01, 500000), 'L', 2)) { isHybrid = true; isPlugIn = true; }
         if (updateMaxUI('val-obfcm-grid', parseObfcmPayload(data, ["41 AC", "62 F4 AC", "49 07"], 0.1, 500000), 'kWh', 1)) { isHybrid = true; isPlugIn = true; }
 
-        // Ajoakun varaus (SOC) pysyy entisellään, koska se on vain yhden tavun pituinen
         if (data.includes("41 5B") || data.includes("62 F4 5B")) {
             let matches = [...data.matchAll(/(?:41 5B|62 F4 5B)\s*([0-9A-F]{2})/g)];
             for (let m of matches) {
@@ -642,22 +629,22 @@
         lambdaValues = [];
         saveState(); 
         
-        log("Vaihe 1: Alustetaan lukija (vLinker tehotoiminto)...");
+        log("Vaihe 1: Alustetaan lukija...");
         await sendCommand("ATZ", 1500); 
         await sendCommand("ATSP0", 400);
         await sendCommand("ATAT1", 400); 
         await sendCommand("ATCAF1", 400); 
         
-        log("Vaihe 2: Kätellään autoa (odota, voi kestää)...");
+        log("Vaihe 2: Kätellään autoa...");
         await sendCommand("0100", 5000); 
         await sendCommand("0100", 5000); 
         
-        log("Vaihe 3: Luetaan auton data...");
+        log("Vaihe 3: Luetaan perusdata...");
         const cmds = ["ATRV", "0101", "ATDP", "0900", "0902", "03", "07", "0151", "015B", "01A5", "01A6", "01A7", "01A8", "01A9", "01AA", "01AB", "01AC", "22F45B", "0907"];
         
         for (const c of cmds) {
             if (connectionFailed) {
-                log("<span style='color:#ef4444; font-weight:bold;'>YHTEYSVIRHE: ECU ei vastannut. Tarkista, että sytytysvirta on PÄÄLLÄ (ON). Keskeytetään.</span>");
+                log("<span style='color:#ef4444; font-weight:bold;'>YHTEYSVIRHE: ECU ei vastannut.</span>");
                 break;
             }
             let cmdDelay = 400;
@@ -666,59 +653,90 @@
         }
 
         if (!connectionFailed) {
-            let obfcmDist = document.getElementById('val-obfcm-dist').innerText;
-            let obfcmFuel = document.getElementById('val-obfcm-fuel').innerText;
-            let obfcmDistOn = document.getElementById('val-obfcm-dist-on').innerText;
-
-            if (obfcmDist === "- km" || obfcmDist === "Ei tuettu" || obfcmFuel === "- L" || obfcmFuel === "Ei tuettu" || obfcmDistOn === "- km") {
-                
+            // Jos tietoja ei vielä ole, aloitetaan älykäs syväskannaus
+            if (!isObfcmDataFound()) {
                 let proto = document.getElementById('val-proto').innerText;
                 
                 if (proto.includes("CAN") || proto.includes("15765") || proto.includes("29") || proto === "-") {
-                    log("<span style='color:#a855f7'>Vaihe 3.5: OBFCM UDS-syväskannaus (Session Unlock)...</span>");
+                    log("<span style='color:#a855f7'>Vaihe 3.5: Älykäs OBFCM-syväskannaus...</span>");
                     let restoreHeader = proto.includes("29") ? "AT SH 18DB33F1" : "AT SH 7DF";
                     
-                    let udsCmds = [];
+                    const udsQueries = ["22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC"];
+                    
                     if (proto.includes("29")) {
-                        udsCmds.push("AT SH 18DB33F1", "AT AR", "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+                        // 29-bit CAN targetit (Esim. Nissan)
+                        let targets = [
+                            {sh: "18DB33F1", cra: ""},
+                            {sh: "18DA00F1", cra: "18DAF100"},
+                            {sh: "18DA01F1", cra: "18DAF101"},
+                            {sh: "18DA02F1", cra: "18DAF102"},
+                            {sh: "18DA03F1", cra: "18DAF103"},
+                            {sh: "18DA04F1", cra: "18DAF104"},
+                            {sh: "18DA05F1", cra: "18DAF105"},
+                            {sh: "18DA06F1", cra: "18DAF106"},
+                            {sh: "18DA07F1", cra: "18DAF107"}
+                        ];
                         
-                        for (let i = 0; i <= 7; i++) {
-                            let target = i.toString(16).padStart(2, '0').toUpperCase();
-                            udsCmds.push(`AT SH 18DA${target}F1`, `AT CRA 18DAF1${target}`, "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+                        for (let t of targets) {
+                            if (connectionFailed || isObfcmDataFound()) break; // FAST EXIT
+                            await sendCommand("AT SH " + t.sh, 400);
+                            if (t.cra) await sendCommand("AT CRA " + t.cra, 400);
+                            await sendCommand("1003", 400); // Session unlock
+                            for (let cmd of udsQueries) {
+                                if (connectionFailed || isObfcmDataFound()) break;
+                                await sendCommand(cmd, 400);
+                            }
                         }
                     } else {
-                        udsCmds.push("AT SH 7DF", "AT AR", "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+                        // 11-bit CAN targetit älykkäässä prioriteettijärjestyksessä
+                        let targets = [
+                            {sh: "7DF", cra: ""},       // Yleinen (BMW jne)
+                            {sh: "710", cra: "77A"},    // VAG Gateway
+                            {sh: "7E0", cra: "7E8"},    // Moottori 1
+                            {sh: "714", cra: "77E"},    // VAG Mittaristo
+                            {sh: "7E1", cra: "7E9"},    // Moottori/Hybridi 2
+                            {sh: "7E2", cra: "7EA"},
+                            {sh: "7E3", cra: "7EB"},
+                            {sh: "7E4", cra: "7EC"},
+                            {sh: "7E5", cra: "7ED"},
+                            {sh: "7E6", cra: "7EE"},
+                            {sh: "7E7", cra: "7EF"}
+                        ];
                         
-                        const rxTbl = ["7E8", "7E9", "7EA", "7EB", "7EC", "7ED", "7EE", "7EF"];
-                        for (let i = 0; i <= 7; i++) {
-                            udsCmds.push(`AT SH 7E${i}`, `AT CRA ${rxTbl[i]}`, "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+                        for (let t of targets) {
+                            if (connectionFailed || isObfcmDataFound()) {
+                                if (isObfcmDataFound()) log("<span style='color:#10b981'>=> Data löytyi, keskeytetään loppuskannaus!</span>");
+                                break; // FAST EXIT
+                            }
+                            await sendCommand("AT SH " + t.sh, 400);
+                            if (t.cra) await sendCommand("AT CRA " + t.cra, 400);
+                            await sendCommand("1003", 400); 
+                            for (let cmd of udsQueries) {
+                                if (connectionFailed || isObfcmDataFound()) break;
+                                await sendCommand(cmd, 400);
+                            }
                         }
                         
-                        // V8.49 FIX: VAG Gateway (710) ja Mittaristo (714) lisätty syväskannaukseen!
-                        udsCmds.push("AT SH 710", "AT CRA 77A", "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
-                        udsCmds.push("AT SH 714", "AT CRA 77E", "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
-
-                        udsCmds.push(
-                            {cmd: "AT SP 7", delay: 800},
-                            "AT SH 18DB33F1", 
-                            "AT AR", 
-                            {cmd: "1003", delay: 2000},
-                            "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC",
-                            {cmd: "AT SP 0", delay: 800},
-                            {cmd: "0100", delay: 8000} 
-                        );
+                        // WWH-OBD Varajärjestelmä (Suoritetaan VAIN jos dataa ei vielä löytynyt)
+                        if (!connectionFailed && !isObfcmDataFound()) {
+                            log("<span style='color:#f59e0b'>=> Yritetään raskasta WWH-OBD varaprotokollaa...</span>");
+                            await sendCommand("AT SP 7", 800);
+                            await sendCommand("AT SH 18DB33F1", 400);
+                            await sendCommand("AT AR", 400);
+                            await sendCommand("1003", 2000);
+                            for (let cmd of udsQueries) {
+                                if (connectionFailed || isObfcmDataFound()) break;
+                                await sendCommand(cmd, 400);
+                            }
+                            await sendCommand("AT SP 0", 800);
+                            await sendCommand("0100", 8000); // Raskas palautus
+                        }
                     }
-                    udsCmds.push("AT AR", restoreHeader);
-                    
-                    for (const c of udsCmds) {
-                        if (connectionFailed) break;
-                        let cmdStr = typeof c === 'object' ? c.cmd : c;
-                        let cmdDelay = typeof c === 'object' ? c.delay : 400;
-                        await sendCommand(cmdStr, cmdDelay); 
-                    }
-                } else {
-                    log("<span style='color:#94a3b8'>Vaihe 3.5: Vanhempi protokolla tunnistettu, ohitetaan CAN-syväskannaus...</span>");
+                    await sendCommand("AT AR", 400);
+                    await sendCommand(restoreHeader, 400);
                 }
+            } else {
+                log("<span style='color:#10b981'>OBFCM-tiedot saatiin jo peruskyselyllä, ohitetaan syväskannaus.</span>");
             }
 
             if (!connectionFailed) {
@@ -726,7 +744,7 @@
                 await sendCommand("0114", 500);
 
                 if (needsLambdaTest && lambdaValues.length > 0) {
-                    log("Vaihe 4: Osatestejä kesken. Suoritetaan lambdasäädön dynaaminen testi...");
+                    log("Vaihe 4: Lambdasäädön dynaaminen testi...");
                     for(let i=0; i<4; i++) {
                         if (connectionFailed) break;
                         await sendCommand("0106", 500); 
