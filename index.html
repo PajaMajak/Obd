@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.48 - The GM Wake-Up Call</title>
+    <title>NexLink Pro v8.49 - The VAG Gateway</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -36,7 +36,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.48</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.49</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -298,6 +298,64 @@
         } catch (e) { log("Virhe: " + e.message); }
     });
 
+    // UUSI V8.49 Liukuva ikkuna -algoritmi monikehysdatan ja roskan suodatukseen
+    function parseObfcmPayload(data, headers, multiplier, maxLimit) {
+        let bestVal = null;
+        for (let header of headers) {
+            if (!data.includes(header)) continue;
+            let parts = data.split(header);
+            
+            // Käydään läpi kaikki osumat (ensimmäisen indeksin jälkeiset osat)
+            for (let p = 1; p < parts.length; p++) {
+                let raw = parts[p];
+                let tokens = raw.split(/\s+/);
+                let hexBytes = [];
+                
+                // Kerätään vain puhtaat hex-tavut ja jätetään ELM327 rivinumerot (0:, 1:) huomiotta
+                for (let t of tokens) {
+                    if (/^[0-9A-F]{2}$/.test(t)) {
+                        hexBytes.push(t);
+                    }
+                }
+                
+                // Siivotaan CAN-väylän lopun täytetavut (Padding: AA tai 55)
+                while (hexBytes.length > 0 && (hexBytes[hexBytes.length - 1] === "AA" || hexBytes[hexBytes.length - 1] === "55")) {
+                    hexBytes.pop();
+                }
+                
+                // Liu'utetaan 4-tavuista (32-bit) lukijaa datan yli
+                for (let i = 0; i <= hexBytes.length - 4; i++) {
+                    let valStr = hexBytes[i] + hexBytes[i+1] + hexBytes[i+2] + hexBytes[i+3];
+                    // Hylätään FFFFFFFF (Standardi vikakoodi puuttuvalle datalle)
+                    if (valStr !== "FFFFFFFF") {
+                        let val = parseInt(valStr, 16) * multiplier;
+                        // Jos arvo on järkevissä rajoissa, tallennetaan maksimiarvo
+                        if (val < maxLimit) {
+                            if (bestVal === null || val > bestVal) {
+                                bestVal = val;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return bestVal;
+    }
+
+    // Apufunktio käyttöliittymän päivitykseen
+    function updateMaxUI(id, val, unit, precision) {
+        if (val === null) return false;
+        let el = document.getElementById(id);
+        let current = parseFloat(el.innerText);
+        
+        // Päivitetään vain, jos uusi arvo on suurempi, tai jos vanha arvo oli "Ei dataa / Estetty"
+        if (isNaN(current) || val > current) {
+            el.innerText = val.toFixed(precision) + " " + unit;
+            return val > 0;
+        }
+        return current > 0;
+    }
+
     function processResponse(res) {
         let data = res.replace(/SEARCHING\.\.\./g, '').trim();
 
@@ -445,125 +503,40 @@
             }
         }
 
+        // Estojen tarkistus (NRC)
         let currentDist = document.getElementById('val-obfcm-dist').innerText;
         if (/(?:22F4A6|21A6)\s*7F\s*(?:22|21)\s*(?:31|11|12|22|33)/.test(data) && !/\d/.test(currentDist)) {
             document.getElementById('val-obfcm-dist').innerText = "Estetty (ECU ei salli lukua)";
         }
-        
         let currentFuel = document.getElementById('val-obfcm-fuel').innerText;
         if (/(?:22F4A7|21A7)\s*7F\s*(?:22|21)\s*(?:31|11|12|22|33)/.test(data) && !/\d/.test(currentFuel)) {
             document.getElementById('val-obfcm-fuel').innerText = "Estetty (ECU ei salli lukua)";
         }
 
+        // --- V8.49 Liukuva OBFCM-purku (Korvaa aiemmat staattiset regexit) ---
         let isHybrid = false;
         let isPlugIn = false;
 
-        if (data.includes("41 A5") || data.includes("62 F4 A5")) {
-            let maxVal = 0; let found = false;
-            let matches = [...data.matchAll(/(?:41 A5|62 F4 A5) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
-            for (let m of matches) {
-                let valStr = m[1] + m[2] + m[3] + m[4];
-                if (!valStr.includes("FFFF")) {
-                    let d = parseInt(valStr, 16) * 0.1;
-                    if (d < 2000000 && d >= maxVal) { maxVal = d; found = true; }
-                }
-            }
-            if (found) { document.getElementById('val-obfcm-dist-off').innerText = maxVal.toFixed(1) + " km"; isHybrid = true; }
+        if (updateMaxUI('val-obfcm-dist-off', parseObfcmPayload(data, ["41 A5", "62 F4 A5"], 0.1, 2000000), 'km', 1)) isHybrid = true;
+        
+        let d_a6 = parseObfcmPayload(data, ["41 A6", "62 F4 A6"], 0.1, 2000000);
+        if (d_a6 !== null) {
+            let el = document.getElementById('val-obfcm-dist');
+            let cur = parseFloat(el.innerText);
+            if (isNaN(cur) || d_a6 > cur) el.innerText = Math.round(d_a6) + " km";
         }
+        
+        updateMaxUI('val-obfcm-fuel', parseObfcmPayload(data, ["41 A7", "62 F4 A7"], 0.01, 500000), 'L', 2);
+        
+        if (updateMaxUI('val-obfcm-dist-on', parseObfcmPayload(data, ["41 A8", "62 F4 A8"], 0.1, 2000000), 'km', 1)) isHybrid = true;
+        if (updateMaxUI('val-obfcm-dist-charge', parseObfcmPayload(data, ["41 A9", "62 F4 A9"], 0.1, 2000000), 'km', 1)) { isHybrid = true; isPlugIn = true; }
+        if (updateMaxUI('val-obfcm-fuel-on', parseObfcmPayload(data, ["41 AA", "62 F4 AA"], 0.01, 500000), 'L', 2)) isHybrid = true;
+        if (updateMaxUI('val-obfcm-fuel-charge', parseObfcmPayload(data, ["41 AB", "62 F4 AB"], 0.01, 500000), 'L', 2)) { isHybrid = true; isPlugIn = true; }
+        if (updateMaxUI('val-obfcm-grid', parseObfcmPayload(data, ["41 AC", "62 F4 AC", "49 07"], 0.1, 500000), 'kWh', 1)) { isHybrid = true; isPlugIn = true; }
 
-        if (data.includes("41 A6") || data.includes("62 F4 A6")) {
-            let maxVal = 0; let found = false;
-            let matches = [...data.matchAll(/(?:41 A6|62 F4 A6) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
-            for (let m of matches) {
-                let valStr = m[1] + m[2] + m[3] + m[4];
-                if (!valStr.includes("FFFF")) {
-                    let d = parseInt(valStr, 16) * 0.1;
-                    if (d < 2000000 && d >= maxVal) { maxVal = d; found = true; }
-                }
-            }
-            if (found) { document.getElementById('val-obfcm-dist').innerText = Math.round(maxVal) + " km"; }
-        }
-
-        if (data.includes("41 A7") || data.includes("62 F4 A7")) {
-            let maxVal = 0; let found = false;
-            let matches = [...data.matchAll(/(?:41 A7|62 F4 A7) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
-            for (let m of matches) {
-                let valStr = m[1] + m[2] + m[3] + m[4];
-                if (!valStr.includes("FFFF")) {
-                    let f = parseInt(valStr, 16) * 0.01;
-                    if (f < 500000 && f >= maxVal) { maxVal = f; found = true; }
-                }
-            }
-            if (found) { document.getElementById('val-obfcm-fuel').innerText = maxVal.toFixed(2) + " L"; }
-        }
-
-        if (data.includes("41 A8") || data.includes("62 F4 A8")) {
-            let maxVal = 0; let found = false;
-            let matches = [...data.matchAll(/(?:41 A8|62 F4 A8) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
-            for (let m of matches) {
-                let valStr = m[1] + m[2] + m[3] + m[4];
-                if (!valStr.includes("FFFF")) {
-                    let d = parseInt(valStr, 16) * 0.1;
-                    if (d < 2000000 && d >= maxVal) { maxVal = d; found = true; }
-                }
-            }
-            if (found) { document.getElementById('val-obfcm-dist-on').innerText = maxVal.toFixed(1) + " km"; isHybrid = true; }
-        }
-
-        if (data.includes("41 A9") || data.includes("62 F4 A9")) {
-            let maxVal = 0; let found = false;
-            let matches = [...data.matchAll(/(?:41 A9|62 F4 A9) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
-            for (let m of matches) {
-                let valStr = m[1] + m[2] + m[3] + m[4];
-                if (!valStr.includes("FFFF")) {
-                    let d = parseInt(valStr, 16) * 0.1;
-                    if (d < 2000000 && d >= maxVal) { maxVal = d; found = true; }
-                }
-            }
-            if (found) { document.getElementById('val-obfcm-dist-charge').innerText = maxVal.toFixed(1) + " km"; isHybrid = true; isPlugIn = true; }
-        }
-
-        if (data.includes("41 AA") || data.includes("62 F4 AA")) {
-            let maxVal = 0; let found = false;
-            let matches = [...data.matchAll(/(?:41 AA|62 F4 AA) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
-            for (let m of matches) {
-                let valStr = m[1] + m[2] + m[3] + m[4];
-                if (!valStr.includes("FFFF")) {
-                    let f = parseInt(valStr, 16) * 0.01;
-                    if (f < 500000 && f >= maxVal) { maxVal = f; found = true; }
-                }
-            }
-            if (found) { document.getElementById('val-obfcm-fuel-on').innerText = maxVal.toFixed(2) + " L"; isHybrid = true; }
-        }
-
-        if (data.includes("41 AB") || data.includes("62 F4 AB")) {
-            let maxVal = 0; let found = false;
-            let matches = [...data.matchAll(/(?:41 AB|62 F4 AB) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
-            for (let m of matches) {
-                let valStr = m[1] + m[2] + m[3] + m[4];
-                if (!valStr.includes("FFFF")) {
-                    let f = parseInt(valStr, 16) * 0.01;
-                    if (f < 500000 && f >= maxVal) { maxVal = f; found = true; }
-                }
-            }
-            if (found) { document.getElementById('val-obfcm-fuel-charge').innerText = maxVal.toFixed(2) + " L"; isHybrid = true; isPlugIn = true; }
-        }
-
-        if (data.includes("41 AC") || data.includes("62 F4 AC") || data.includes("49 07")) {
-            let maxVal = 0; let found = false;
-            let matches = [...data.matchAll(/(?:41 AC|62 F4 AC|49 07) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2}) ([0-9A-F]{2})/g)];
-            for (let m of matches) {
-                let valStr = m[1] + m[2] + m[3] + m[4];
-                if (!valStr.includes("FFFF")) {
-                    let e = parseInt(valStr, 16) * 0.1;
-                    if (e < 500000 && e >= maxVal) { maxVal = e; found = true; }
-                }
-            }
-            if (found) { document.getElementById('val-obfcm-grid').innerText = maxVal.toFixed(1) + " kWh"; isHybrid = true; isPlugIn = true; }
-        }
-
+        // Ajoakun varaus (SOC) pysyy entisellään, koska se on vain yhden tavun pituinen
         if (data.includes("41 5B") || data.includes("62 F4 5B")) {
-            let matches = [...data.matchAll(/(?:41 5B|62 F4 5B) ([0-9A-F]{2})/g)];
+            let matches = [...data.matchAll(/(?:41 5B|62 F4 5B)\s*([0-9A-F]{2})/g)];
             for (let m of matches) {
                 if (m[1] !== "FF") {
                     let soc = (parseInt(m[1], 16) * 100 / 255).toFixed(1);
@@ -575,8 +548,8 @@
 
         if (isHybrid) {
             document.getElementById('phev-obfcm-section').style.display = 'block';
-            let currentFuel = document.getElementById('val-fuel-type').innerText;
-            if (currentFuel === "-" || currentFuel === "Bensiini" || currentFuel.includes("Tuntematon")) {
+            let currentFuelType = document.getElementById('val-fuel-type').innerText;
+            if (currentFuelType === "-" || currentFuelType === "Bensiini" || currentFuelType.includes("Tuntematon")) {
                 if (isPlugIn) {
                     document.getElementById('val-fuel-type').innerText = "Lataushybridi (PHEV)";
                 } else {
@@ -670,14 +643,14 @@
         saveState(); 
         
         log("Vaihe 1: Alustetaan lukija (vLinker tehotoiminto)...");
-        await sendCommand("ATZ", 1500); // V8.48 FIX: Annetaan piirille 1.5 sekuntia aikaa käynnistyä, ettei ATSP0 -komento katoa bittiavaruuteen!
+        await sendCommand("ATZ", 1500); 
         await sendCommand("ATSP0", 400);
         await sendCommand("ATAT1", 400); 
         await sendCommand("ATCAF1", 400); 
         
         log("Vaihe 2: Kätellään autoa (odota, voi kestää)...");
         await sendCommand("0100", 5000); 
-        await sendCommand("0100", 5000); // V8.48 FIX: Tuplakoputus Opelin ja GM:n uneliaille väylille
+        await sendCommand("0100", 5000); 
         
         log("Vaihe 3: Luetaan auton data...");
         const cmds = ["ATRV", "0101", "ATDP", "0900", "0902", "03", "07", "0151", "015B", "01A5", "01A6", "01A7", "01A8", "01A9", "01AA", "01AB", "01AC", "22F45B", "0907"];
@@ -721,6 +694,10 @@
                             udsCmds.push(`AT SH 7E${i}`, `AT CRA ${rxTbl[i]}`, "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
                         }
                         
+                        // V8.49 FIX: VAG Gateway (710) ja Mittaristo (714) lisätty syväskannaukseen!
+                        udsCmds.push("AT SH 710", "AT CRA 77A", "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+                        udsCmds.push("AT SH 714", "AT CRA 77E", "1003", "22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC");
+
                         udsCmds.push(
                             {cmd: "AT SP 7", delay: 800},
                             "AT SH 18DB33F1", 
