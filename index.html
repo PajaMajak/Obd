@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.50 - The Smart Scanner</title>
+    <title>NexLink Pro v8.51 - The Strict Bouncer</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -36,7 +36,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.50</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.51</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -345,11 +345,24 @@
         return current > 0;
     }
 
-    // V8.50 Älykäs testi: Tarkistaa onko data jo löytynyt
+    // V8.51: Strict Bouncer - Vaatii molemmat (ja mahd. hybrididatan)
     const isObfcmDataFound = () => {
         let d = document.getElementById('val-obfcm-dist').innerText;
         let f = document.getElementById('val-obfcm-fuel').innerText;
-        return (/\d/.test(d) && !d.includes("Ei tuettu")) || (/\d/.test(f) && !f.includes("Ei tuettu"));
+        
+        let hasDist = /\d/.test(d) && !d.includes("Ei tuettu");
+        let hasFuel = /\d/.test(f) && !f.includes("Ei tuettu");
+        
+        let isHybrid = document.getElementById('phev-obfcm-section').style.display === 'block';
+        
+        if (isHybrid) {
+            let off = document.getElementById('val-obfcm-dist-off').innerText;
+            let on = document.getElementById('val-obfcm-dist-on').innerText;
+            let hasHybridStats = (/\d/.test(off) && !off.includes("Ei")) || (/\d/.test(on) && !on.includes("Ei"));
+            return hasDist && hasFuel && hasHybridStats;
+        }
+
+        return hasDist && hasFuel;
     };
 
     function processResponse(res) {
@@ -653,7 +666,6 @@
         }
 
         if (!connectionFailed) {
-            // Jos tietoja ei vielä ole, aloitetaan älykäs syväskannaus
             if (!isObfcmDataFound()) {
                 let proto = document.getElementById('val-proto').innerText;
                 
@@ -664,7 +676,6 @@
                     const udsQueries = ["22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC"];
                     
                     if (proto.includes("29")) {
-                        // 29-bit CAN targetit (Esim. Nissan)
                         let targets = [
                             {sh: "18DB33F1", cra: ""},
                             {sh: "18DA00F1", cra: "18DAF100"},
@@ -678,23 +689,22 @@
                         ];
                         
                         for (let t of targets) {
-                            if (connectionFailed || isObfcmDataFound()) break; // FAST EXIT
+                            if (connectionFailed || isObfcmDataFound()) break;
                             await sendCommand("AT SH " + t.sh, 400);
                             if (t.cra) await sendCommand("AT CRA " + t.cra, 400);
-                            await sendCommand("1003", 400); // Session unlock
+                            await sendCommand("1003", 400); 
                             for (let cmd of udsQueries) {
                                 if (connectionFailed || isObfcmDataFound()) break;
                                 await sendCommand(cmd, 400);
                             }
                         }
                     } else {
-                        // 11-bit CAN targetit älykkäässä prioriteettijärjestyksessä
                         let targets = [
-                            {sh: "7DF", cra: ""},       // Yleinen (BMW jne)
-                            {sh: "710", cra: "77A"},    // VAG Gateway
-                            {sh: "7E0", cra: "7E8"},    // Moottori 1
-                            {sh: "714", cra: "77E"},    // VAG Mittaristo
-                            {sh: "7E1", cra: "7E9"},    // Moottori/Hybridi 2
+                            {sh: "7DF", cra: ""},       
+                            {sh: "710", cra: "77A"},    
+                            {sh: "7E0", cra: "7E8"},    
+                            {sh: "714", cra: "77E"},    
+                            {sh: "7E1", cra: "7E9"},    
                             {sh: "7E2", cra: "7EA"},
                             {sh: "7E3", cra: "7EB"},
                             {sh: "7E4", cra: "7EC"},
@@ -705,8 +715,8 @@
                         
                         for (let t of targets) {
                             if (connectionFailed || isObfcmDataFound()) {
-                                if (isObfcmDataFound()) log("<span style='color:#10b981'>=> Data löytyi, keskeytetään loppuskannaus!</span>");
-                                break; // FAST EXIT
+                                if (isObfcmDataFound()) log("<span style='color:#10b981'>=> Kaikki tarvittava data löytyi, keskeytetään loppuskannaus!</span>");
+                                break; 
                             }
                             await sendCommand("AT SH " + t.sh, 400);
                             if (t.cra) await sendCommand("AT CRA " + t.cra, 400);
@@ -717,7 +727,6 @@
                             }
                         }
                         
-                        // WWH-OBD Varajärjestelmä (Suoritetaan VAIN jos dataa ei vielä löytynyt)
                         if (!connectionFailed && !isObfcmDataFound()) {
                             log("<span style='color:#f59e0b'>=> Yritetään raskasta WWH-OBD varaprotokollaa...</span>");
                             await sendCommand("AT SP 7", 800);
@@ -729,7 +738,7 @@
                                 await sendCommand(cmd, 400);
                             }
                             await sendCommand("AT SP 0", 800);
-                            await sendCommand("0100", 8000); // Raskas palautus
+                            await sendCommand("0100", 8000); 
                         }
                     }
                     await sendCommand("AT AR", 400);
