@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.53 - The Lambda Breather</title>
+    <title>NexLink Pro v8.54 - The Korean Gateway</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -36,7 +36,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.53</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.54</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -720,13 +720,17 @@
                             }
                         }
                     } else {
+                        // V8.54 THE KOREAN GATEWAY FIX: Uudet laajat kohdeosoitteet
                         let targets = [
                             {sh: "7DF", cra: ""},       
-                            {sh: "710", cra: "77A"},    
-                            {sh: "7E0", cra: "7E8"},    
-                            {sh: "714", cra: "77E"},    
+                            {sh: "710", cra: "77A"},    // VAG Gateway
+                            {sh: "7D0", cra: "7D8"},    // Kia/Hyundai Central Gateway
+                            {sh: "7E0", cra: "7E8"},    // Moottori 1
+                            {sh: "714", cra: "77E"},    // VAG Mittaristo
+                            {sh: "726", cra: "72E"},    // Ford/Mazda Gateway
+                            {sh: "7A0", cra: "7A8"},    // Kia/Hyundai Kori/IGPM
                             {sh: "7E1", cra: "7E9"},    
-                            {sh: "7E2", cra: "7EA"},
+                            {sh: "7E2", cra: "7EA"},    // Kia/Hyundai HEV / VCU
                             {sh: "7E3", cra: "7EB"},
                             {sh: "7E4", cra: "7EC"},
                             {sh: "7E5", cra: "7ED"},
@@ -778,8 +782,6 @@
                     for(let i=0; i<4; i++) {
                         if (connectionFailed) break;
                         await sendCommand("0106", 500, false); 
-                        
-                        // V8.53 FIX: The Lambda Breather - Pakotettu tauko moottorin reagoinnille
                         await new Promise(r => setTimeout(r, 300)); 
                     }
                     let uniqueValues = new Set(lambdaValues);
