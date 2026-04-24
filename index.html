@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.51 - The Strict Bouncer</title>
+    <title>NexLink Pro v8.52 - The Live Stream</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -36,7 +36,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.51</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.52</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -142,6 +142,9 @@
     let needsLambdaTest = false;
     let lambdaValues = [];
     let connectionFailed = false;
+
+    // V8.52 "Live Stream" nopeusoptimoija
+    let resolveCommand = null;
 
     let saveTimeout;
     function queueSaveState() {
@@ -285,6 +288,8 @@
                 if (c.properties.notify) charRead = c;
             }
             await charRead.startNotifications();
+            
+            // V8.52 LIVE YHTEYS KUUNTELIJA
             charRead.addEventListener('characteristicvaluechanged', (e) => {
                 currentBuffer += decoder.decode(e.target.value);
                 if (currentBuffer.includes(">")) {
@@ -292,6 +297,12 @@
                     log(`<span style="color:#facc15">RAW: ${cleanRes}</span>`); 
                     processResponse(cleanRes);
                     currentBuffer = "";
+                    
+                    // Katkaise odotus heti kun data tuli sisään!
+                    if (resolveCommand) {
+                        resolveCommand();
+                        resolveCommand = null;
+                    }
                 }
             });
             await runDiagnostics();
@@ -345,7 +356,6 @@
         return current > 0;
     }
 
-    // V8.51: Strict Bouncer - Vaatii molemmat (ja mahd. hybrididatan)
     const isObfcmDataFound = () => {
         let d = document.getElementById('val-obfcm-dist').innerText;
         let f = document.getElementById('val-obfcm-fuel').innerText;
@@ -604,10 +614,29 @@
         queueSaveState();
     }
 
-    async function sendCommand(cmd, customDelay = 400) {
+    // V8.52 UUSI: Livenä kuunteleva sendCommand-funktio (Poistaa kuolleen ajan)
+    async function sendCommand(cmd, delay = 400, forceWait = false) {
         if (!charWrite) return;
+        currentBuffer = ""; // Tyhjennetään puskuri aina ennen uutta komentoa
         await charWrite.writeValueWithoutResponse(encoder.encode(cmd + '\r'));
-        await new Promise(r => setTimeout(r, customDelay)); 
+
+        if (forceWait) {
+            // Pakotettu viive kriittisille herätyksille (Esim. Opelin 0100)
+            await new Promise(r => setTimeout(r, delay));
+        } else {
+            // Live-tila: Odotetaan joko Bluetooth-katkaisua TAI varaviiveen loppumista
+            await new Promise(resolve => {
+                resolveCommand = resolve;
+                setTimeout(() => {
+                    if (resolveCommand === resolve) {
+                        resolveCommand = null;
+                        resolve(); // Jatketaan, jos laite ei antanut promptia ajoissa
+                    }
+                }, delay); // delay toimii nyt vain varmuuskellona!
+            });
+            // Annetaan laitteelle hyvin lyhyt "hengähdystauko" promptin jälkeen
+            await new Promise(r => setTimeout(r, 20));
+        }
     }
 
     async function runDiagnostics() {
@@ -642,15 +671,16 @@
         lambdaValues = [];
         saveState(); 
         
-        log("Vaihe 1: Alustetaan lukija...");
-        await sendCommand("ATZ", 1500); 
-        await sendCommand("ATSP0", 400);
-        await sendCommand("ATAT1", 400); 
-        await sendCommand("ATCAF1", 400); 
+        log("Vaihe 1: Alustetaan lukija (Live-tila)...");
+        // HUOM: ATZ ja isot herätteet käyttävät "true" (Force Wait), muut datakyselyt "false" (Live)
+        await sendCommand("ATZ", 1500, true); 
+        await sendCommand("ATSP0", 400, false);
+        await sendCommand("ATAT1", 400, false); 
+        await sendCommand("ATCAF1", 400, false); 
         
         log("Vaihe 2: Kätellään autoa...");
-        await sendCommand("0100", 5000); 
-        await sendCommand("0100", 5000); 
+        await sendCommand("0100", 5000, true); 
+        await sendCommand("0100", 5000, true); 
         
         log("Vaihe 3: Luetaan perusdata...");
         const cmds = ["ATRV", "0101", "ATDP", "0900", "0902", "03", "07", "0151", "015B", "01A5", "01A6", "01A7", "01A8", "01A9", "01AA", "01AB", "01AC", "22F45B", "0907"];
@@ -660,9 +690,8 @@
                 log("<span style='color:#ef4444; font-weight:bold;'>YHTEYSVIRHE: ECU ei vastannut.</span>");
                 break;
             }
-            let cmdDelay = 400;
-            if (c === "0902" || c === "03" || c === "07") cmdDelay = 1000;
-            await sendCommand(c, cmdDelay); 
+            let cmdDelay = (c === "0902" || c === "03" || c === "07") ? 1000 : 800;
+            await sendCommand(c, cmdDelay, false); 
         }
 
         if (!connectionFailed) {
@@ -690,12 +719,12 @@
                         
                         for (let t of targets) {
                             if (connectionFailed || isObfcmDataFound()) break;
-                            await sendCommand("AT SH " + t.sh, 400);
-                            if (t.cra) await sendCommand("AT CRA " + t.cra, 400);
-                            await sendCommand("1003", 400); 
+                            await sendCommand("AT SH " + t.sh, 400, false);
+                            if (t.cra) await sendCommand("AT CRA " + t.cra, 400, false);
+                            await sendCommand("1003", 800, false); 
                             for (let cmd of udsQueries) {
                                 if (connectionFailed || isObfcmDataFound()) break;
-                                await sendCommand(cmd, 400);
+                                await sendCommand(cmd, 400, false);
                             }
                         }
                     } else {
@@ -718,45 +747,45 @@
                                 if (isObfcmDataFound()) log("<span style='color:#10b981'>=> Kaikki tarvittava data löytyi, keskeytetään loppuskannaus!</span>");
                                 break; 
                             }
-                            await sendCommand("AT SH " + t.sh, 400);
-                            if (t.cra) await sendCommand("AT CRA " + t.cra, 400);
-                            await sendCommand("1003", 400); 
+                            await sendCommand("AT SH " + t.sh, 400, false);
+                            if (t.cra) await sendCommand("AT CRA " + t.cra, 400, false);
+                            await sendCommand("1003", 800, false); 
                             for (let cmd of udsQueries) {
                                 if (connectionFailed || isObfcmDataFound()) break;
-                                await sendCommand(cmd, 400);
+                                await sendCommand(cmd, 400, false);
                             }
                         }
                         
                         if (!connectionFailed && !isObfcmDataFound()) {
                             log("<span style='color:#f59e0b'>=> Yritetään raskasta WWH-OBD varaprotokollaa...</span>");
-                            await sendCommand("AT SP 7", 800);
-                            await sendCommand("AT SH 18DB33F1", 400);
-                            await sendCommand("AT AR", 400);
-                            await sendCommand("1003", 2000);
+                            await sendCommand("AT SP 7", 800, true);
+                            await sendCommand("AT SH 18DB33F1", 400, false);
+                            await sendCommand("AT AR", 400, false);
+                            await sendCommand("1003", 2000, true);
                             for (let cmd of udsQueries) {
                                 if (connectionFailed || isObfcmDataFound()) break;
-                                await sendCommand(cmd, 400);
+                                await sendCommand(cmd, 400, false);
                             }
-                            await sendCommand("AT SP 0", 800);
-                            await sendCommand("0100", 8000); 
+                            await sendCommand("AT SP 0", 800, true);
+                            await sendCommand("0100", 8000, true); 
                         }
                     }
-                    await sendCommand("AT AR", 400);
-                    await sendCommand(restoreHeader, 400);
+                    await sendCommand("AT AR", 400, false);
+                    await sendCommand(restoreHeader, 400, false);
                 }
             } else {
-                log("<span style='color:#10b981'>OBFCM-tiedot saatiin jo peruskyselyllä, ohitetaan syväskannaus.</span>");
+                log("<span style='color:#10b981'>Kaikki OBFCM-tiedot saatiin jo peruskyselyllä, ohitetaan syväskannaus.</span>");
             }
 
             if (!connectionFailed) {
-                await sendCommand("0106", 500);
-                await sendCommand("0114", 500);
+                await sendCommand("0106", 500, false);
+                await sendCommand("0114", 500, false);
 
                 if (needsLambdaTest && lambdaValues.length > 0) {
                     log("Vaihe 4: Lambdasäädön dynaaminen testi...");
                     for(let i=0; i<4; i++) {
                         if (connectionFailed) break;
-                        await sendCommand("0106", 500); 
+                        await sendCommand("0106", 500, false); 
                     }
                     let uniqueValues = new Set(lambdaValues);
                     let lastVal = lambdaValues[lambdaValues.length - 1];
@@ -791,7 +820,7 @@
 
     async function clearDTCs() {
         if (confirm("Nollataanko vikakoodit?")) { 
-            await sendCommand("04"); 
+            await sendCommand("04", 400, false); 
             log("Nollattu."); 
             document.getElementById('dtc-stored').innerHTML = "Ei koodeja.";
             document.getElementById('dtc-pending').innerHTML = "Ei koodeja.";
