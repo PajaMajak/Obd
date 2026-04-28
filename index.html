@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.54 - The Korean Gateway</title>
+    <title>NexLink Pro v8.55 - The Japanese Masterkey</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -36,7 +36,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.54</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.55</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -698,44 +698,43 @@
                     
                     if (proto.includes("29")) {
                         let targets = [
-                            {sh: "18DB33F1", cra: ""},
-                            {sh: "18DA00F1", cra: "18DAF100"},
-                            {sh: "18DA01F1", cra: "18DAF101"},
-                            {sh: "18DA02F1", cra: "18DAF102"},
-                            {sh: "18DA03F1", cra: "18DAF103"},
-                            {sh: "18DA04F1", cra: "18DAF104"},
-                            {sh: "18DA05F1", cra: "18DAF105"},
-                            {sh: "18DA06F1", cra: "18DAF106"},
-                            {sh: "18DA07F1", cra: "18DAF107"}
+                            {sh: "18DB33F1", cra: "", session: ""},
+                            {sh: "18DA00F1", cra: "18DAF100", session: ""},
+                            {sh: "18DA01F1", cra: "18DAF101", session: ""},
+                            {sh: "18DA02F1", cra: "18DAF102", session: ""},
+                            {sh: "18DA03F1", cra: "18DAF103", session: ""},
+                            {sh: "18DA04F1", cra: "18DAF104", session: ""},
+                            {sh: "18DA05F1", cra: "18DAF105", session: ""},
+                            {sh: "18DA06F1", cra: "18DAF106", session: ""},
+                            {sh: "18DA07F1", cra: "18DAF107", session: ""}
                         ];
                         
                         for (let t of targets) {
                             if (connectionFailed || isObfcmDataFound()) break;
+                            await sendCommand("AT AR", 400, false);
                             await sendCommand("AT SH " + t.sh, 400, false);
                             if (t.cra) await sendCommand("AT CRA " + t.cra, 400, false);
-                            await sendCommand("1003", 800, false); 
+                            if (t.session) await sendCommand(t.session, 800, false); 
                             for (let cmd of udsQueries) {
                                 if (connectionFailed || isObfcmDataFound()) break;
                                 await sendCommand(cmd, 400, false);
                             }
                         }
                     } else {
-                        // V8.54 THE KOREAN GATEWAY FIX: Uudet laajat kohdeosoitteet
+                        // V8.55 THE JAPANESE MASTERKEY FIX:
+                        // Ei huudeta 1003-tilaa kaikille! Suorat kyselyt niille, jotka noudattavat lakia.
                         let targets = [
-                            {sh: "7DF", cra: ""},       
-                            {sh: "710", cra: "77A"},    // VAG Gateway
-                            {sh: "7D0", cra: "7D8"},    // Kia/Hyundai Central Gateway
-                            {sh: "7E0", cra: "7E8"},    // Moottori 1
-                            {sh: "714", cra: "77E"},    // VAG Mittaristo
-                            {sh: "726", cra: "72E"},    // Ford/Mazda Gateway
-                            {sh: "7A0", cra: "7A8"},    // Kia/Hyundai Kori/IGPM
-                            {sh: "7E1", cra: "7E9"},    
-                            {sh: "7E2", cra: "7EA"},    // Kia/Hyundai HEV / VCU
-                            {sh: "7E3", cra: "7EB"},
-                            {sh: "7E4", cra: "7EC"},
-                            {sh: "7E5", cra: "7ED"},
-                            {sh: "7E6", cra: "7EE"},
-                            {sh: "7E7", cra: "7EF"}
+                            {sh: "7DF", cra: "", session: ""},           // Yleinen Functional (suoraan!)
+                            {sh: "7E0", cra: "7E8", session: ""},        // Toyota/Yleinen Engine ECU
+                            {sh: "7E2", cra: "7EA", session: ""},        // Toyota HEV
+                            {sh: "7C0", cra: "7C8", session: ""},        // Toyota Instrument Cluster
+                            {sh: "710", cra: "77A", session: "1003"},    // VAG Gateway
+                            {sh: "7D0", cra: "7D8", session: "1003"},    // Kia/Hyundai Gateway
+                            {sh: "714", cra: "77E", session: "1003"},    // VAG Mittaristo
+                            {sh: "726", cra: "72E", session: ""},        // Ford/Mazda Gateway
+                            {sh: "7A0", cra: "7A8", session: ""},        // Kia/Hyundai BCM
+                            {sh: "7E1", cra: "7E9", session: ""},    
+                            {sh: "7E3", cra: "7EB", session: ""}         // EV Battery
                         ];
                         
                         for (let t of targets) {
@@ -743,9 +742,16 @@
                                 if (isObfcmDataFound()) log("<span style='color:#10b981'>=> Kaikki tarvittava data löytyi, keskeytetään loppuskannaus!</span>");
                                 break; 
                             }
+                            
+                            // V8.55 FIX: Nollataan aina suodatin (CRA) ennen uutta kohdetta
+                            await sendCommand("AT AR", 400, false);
                             await sendCommand("AT SH " + t.sh, 400, false);
                             if (t.cra) await sendCommand("AT CRA " + t.cra, 400, false);
-                            await sendCommand("1003", 800, false); 
+                            
+                            if (t.session) {
+                                await sendCommand(t.session, 800, false); 
+                            }
+                            
                             for (let cmd of udsQueries) {
                                 if (connectionFailed || isObfcmDataFound()) break;
                                 await sendCommand(cmd, 400, false);
@@ -757,7 +763,7 @@
                             await sendCommand("AT SP 7", 800, true);
                             await sendCommand("AT SH 18DB33F1", 400, false);
                             await sendCommand("AT AR", 400, false);
-                            await sendCommand("1003", 2000, true);
+                            // WWH-OBD kokeillaan ilman aggressiivista sessioherätystä
                             for (let cmd of udsQueries) {
                                 if (connectionFailed || isObfcmDataFound()) break;
                                 await sendCommand(cmd, 400, false);
