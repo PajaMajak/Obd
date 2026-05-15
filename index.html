@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.59 - The Strict 1001</title>
+    <title>NexLink Pro v8.60 - The Dynamic Harvester</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -36,7 +36,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.59</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.60</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -143,6 +143,10 @@
     let lambdaValues = [];
     let connectionFailed = false;
 
+    // V8.60 Dynamic Harvester globals
+    let supportedPIDs = new Set();
+    let supportedInfoTypes = new Set();
+
     let resolveCommand = null;
 
     let saveTimeout;
@@ -157,9 +161,6 @@
             const response = await fetch(`vikakoodit.json?v=${cacheBuster}`);
             if (response.ok) {
                 dtcDatabase = await response.json();
-                console.log("JSON-Tietokanta ladattu, koodeja yhteensä:", Object.keys(dtcDatabase).length);
-            } else {
-                console.error("Virhe ladattaessa vikakoodit.json -tiedostoa. HTTP-status:", response.status);
             }
         } catch (error) {
             console.error("Vikakooditietokantaa ei voitu ladata.", error);
@@ -230,9 +231,7 @@
                 
                 const logBox = document.getElementById('log');
                 logBox.scrollTop = logBox.scrollHeight;
-            } catch (e) {
-                console.error("Virhe tallennuksen lataamisessa", e);
-            }
+            } catch (e) { }
         }
     }
 
@@ -259,10 +258,7 @@
                 btn.innerText = "KOPIOI LOKI";
                 btn.style.background = "#0f766e"; 
             }, 2000);
-        } catch (err) {
-            console.error("Kopiointi epäonnistui:", err);
-            alert("Lokin kopiointi epäonnistui selaimen suojausasetusten vuoksi.");
-        }
+        } catch (err) { alert("Kopiointi epäonnistui."); }
     }
 
     document.getElementById('connectBtn').addEventListener('click', async () => {
@@ -272,7 +268,6 @@
                 optionalServices: ['0000fff0-0000-1000-8000-00805f9b34fb', '000018f0-0000-1000-8000-00805f9b34fb']
             });
             const gatt = await device.gatt.connect();
-            
             let service;
             try {
                 service = await gatt.getPrimaryService('0000fff0-0000-1000-8000-00805f9b34fb');
@@ -280,14 +275,12 @@
                 log("Standardipalvelua ei löytynyt, käytetään vLinker IOS -palvelua...");
                 service = await gatt.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
             }
-            
             const chars = await service.getCharacteristics();
             for (const c of chars) {
                 if (c.properties.write || c.properties.writeWithoutResponse) charWrite = c;
                 if (c.properties.notify) charRead = c;
             }
             await charRead.startNotifications();
-            
             charRead.addEventListener('characteristicvaluechanged', (e) => {
                 currentBuffer += decoder.decode(e.target.value);
                 if (currentBuffer.includes(">")) {
@@ -295,11 +288,7 @@
                     log(`<span style="color:#facc15">RAW: ${cleanRes}</span>`); 
                     processResponse(cleanRes);
                     currentBuffer = "";
-                    
-                    if (resolveCommand) {
-                        resolveCommand();
-                        resolveCommand = null;
-                    }
+                    if (resolveCommand) { resolveCommand(); resolveCommand = null; }
                 }
             });
             await runDiagnostics();
@@ -311,22 +300,16 @@
         for (let header of headers) {
             if (!data.includes(header)) continue;
             let parts = data.split(header);
-            
             for (let p = 1; p < parts.length; p++) {
                 let raw = parts[p];
                 let tokens = raw.split(/\s+/);
                 let hexBytes = [];
-                
                 for (let t of tokens) {
-                    if (/^[0-9A-F]{2}$/.test(t)) {
-                        hexBytes.push(t);
-                    }
+                    if (/^[0-9A-F]{2}$/.test(t)) hexBytes.push(t);
                 }
-                
                 while (hexBytes.length > 0 && (hexBytes[hexBytes.length - 1] === "AA" || hexBytes[hexBytes.length - 1] === "55")) {
                     hexBytes.pop();
                 }
-                
                 for (let i = 0; i <= hexBytes.length - 4; i++) {
                     let valStr = hexBytes[i] + hexBytes[i+1] + hexBytes[i+2] + hexBytes[i+3];
                     if (valStr !== "FFFFFFFF") {
@@ -345,7 +328,6 @@
         if (val === null) return false;
         let el = document.getElementById(id);
         let current = parseFloat(el.innerText);
-        
         if (isNaN(current) || val > current) {
             el.innerText = val.toFixed(precision) + " " + unit;
             return val > 0;
@@ -356,40 +338,68 @@
     const isObfcmDataFound = () => {
         let d = document.getElementById('val-obfcm-dist').innerText;
         let f = document.getElementById('val-obfcm-fuel').innerText;
-        
         let hasDist = /\d/.test(d) && !d.includes("Ei tuettu");
         let hasFuel = /\d/.test(f) && !f.includes("Ei tuettu");
-        
         let isHybrid = document.getElementById('phev-obfcm-section').style.display === 'block';
-        
         if (isHybrid) {
             let off = document.getElementById('val-obfcm-dist-off').innerText;
             let on = document.getElementById('val-obfcm-dist-on').innerText;
             let hasHybridStats = (/\d/.test(off) && !off.includes("Ei")) || (/\d/.test(on) && !on.includes("Ei"));
             return hasDist && hasFuel && hasHybridStats;
         }
-
         return hasDist && hasFuel;
     };
 
     function processResponse(res) {
         let data = res.replace(/SEARCHING\.\.\./g, '').trim();
 
+        // V8.60: Extract Supported PIDs from Bitmasks (00, 20, 40, 60, 80, A0, C0, E0)
+        let matchMask = data.match(/41\s+(00|20|40|60|80|A0|C0|E0)\s+([0-9A-F]{2})\s+([0-9A-F]{2})\s+([0-9A-F]{2})\s+([0-9A-F]{2})/g);
+        if (matchMask) {
+            for (let m of matchMask) {
+                let parts = m.split(/\s+/);
+                let baseNum = parseInt(parts[1], 16);
+                let bytes = [parseInt(parts[2],16), parseInt(parts[3],16), parseInt(parts[4],16), parseInt(parts[5],16)];
+                for(let byteIdx = 0; byteIdx < 4; byteIdx++) {
+                    for(let bitIdx = 0; bitIdx < 8; bitIdx++) {
+                        if ((bytes[byteIdx] & (1 << (7 - bitIdx))) !== 0) {
+                            let pidNum = baseNum + (byteIdx * 8) + bitIdx + 1;
+                            supportedPIDs.add(pidNum.toString(16).toUpperCase().padStart(2, '0'));
+                        }
+                    }
+                }
+            }
+        }
+
+        // V8.60: Extract Supported InfoTypes (Service 09)
+        let matchInfoMask = data.match(/49\s+00\s+([0-9A-F]{2})\s+([0-9A-F]{2})\s+([0-9A-F]{2})\s+([0-9A-F]{2})/g);
+        if (matchInfoMask) {
+            for (let m of matchInfoMask) {
+                let parts = m.split(/\s+/);
+                let bytes = [parseInt(parts[2],16), parseInt(parts[3],16), parseInt(parts[4],16), parseInt(parts[5],16)];
+                for(let byteIdx = 0; byteIdx < 4; byteIdx++) {
+                    for(let bitIdx = 0; bitIdx < 8; bitIdx++) {
+                        if ((bytes[byteIdx] & (1 << (7 - bitIdx))) !== 0) {
+                            let itNum = (byteIdx * 8) + bitIdx + 1;
+                            supportedInfoTypes.add(itNum.toString(16).toUpperCase().padStart(2, '0'));
+                        }
+                    }
+                }
+            }
+        }
+
         if (data.includes("V") && /[0-9]{1,2}\.[0-9]/.test(data)) {
             let match = data.match(/[0-9]{1,2}\.[0-9]/);
             if (match) document.getElementById('val-voltage').innerText = match[0] + " V";
         }
-        
         if (data.includes("UNABLE TO CONNECT") || data.includes("ERROR")) {
             connectionFailed = true;
             document.getElementById('val-proto').innerText = "Yhteys ECUun epäonnistui";
         }
-        
         if (data.includes("ISO") || data.includes("CAN") || data.includes("KWP") || data.includes("FAST")) {
             let protoStr = data.replace(/ATDP\s*/g, '').replace(/AUTO,\s*/g, '').trim();
             document.getElementById('val-proto').innerText = protoStr;
         }
-
         if (/0902\s*NO\s*DATA/.test(data)) document.getElementById('val-vin').innerText = "Ei tuettu (Ei ECUssa)";
 
         if (data.includes("49 02") || data.includes("0: 49")) {
@@ -399,51 +409,30 @@
                 let c = parseInt(hex.substr(i,2),16); 
                 if(c >= 44 && c <= 90) v += String.fromCharCode(c); 
             }
-            if (v.length > 10) {
-                document.getElementById('val-vin').innerText = v;
-            } else if (data.includes("20 20 20") || data.includes("FF FF FF") || hex.includes("FFFFFF")) {
-                document.getElementById('val-vin').innerText = "Tyhjä (Ei ohjelmoitu ECUun)";
-            }
+            if (v.length > 10) document.getElementById('val-vin').innerText = v;
         }
 
         if (data.includes("41 01")) {
             let matches = [...data.matchAll(/41 01\s+([0-9A-F]{2})\s+([0-9A-F]{2})\s+([0-9A-F]{2})\s+([0-9A-F]{2})/g)];
-            let bestSupported = -1;
-            let bestReady = 0;
-            let bestMil = "OK";
-            let isDiesel = false;
-
+            let bestSupported = -1; let bestReady = 0; let bestMil = "OK"; let isDiesel = false;
             for (let m of matches) {
-                let byteA = parseInt(m[1], 16);
-                let byteB = parseInt(m[2], 16);
-                let byteC = parseInt(m[3], 16);
-                let byteD = parseInt(m[4], 16);
-                
-                let supportedCount = 0;
-                let readyCount = 0;
-                
+                let byteA = parseInt(m[1], 16), byteB = parseInt(m[2], 16), byteC = parseInt(m[3], 16), byteD = parseInt(m[4], 16);
+                let supportedCount = 0, readyCount = 0;
                 for (let i = 0; i < 3; i++) {
                     if ((byteB & (1 << i)) !== 0) { 
-                        supportedCount++;
-                        if ((byteB & (1 << (i + 4))) === 0) { readyCount++; }
+                        supportedCount++; if ((byteB & (1 << (i + 4))) === 0) readyCount++; 
                     }
                 }
-                
                 for (let i = 0; i < 8; i++) {
                     if ((byteC & (1 << i)) !== 0) { 
-                        supportedCount++;
-                        if ((byteD & (1 << i)) === 0) { readyCount++; }
+                        supportedCount++; if ((byteD & (1 << i)) === 0) readyCount++; 
                     }
                 }
-                
                 if (supportedCount > bestSupported) {
-                    bestSupported = supportedCount;
-                    bestReady = readyCount;
-                    bestMil = (byteA & 0x80) ? "⚠️ PÄÄLLÄ" : "OK";
-                    isDiesel = (byteB & 0x08) !== 0;
+                    bestSupported = supportedCount; bestReady = readyCount;
+                    bestMil = (byteA & 0x80) ? "⚠️ PÄÄLLÄ" : "OK"; isDiesel = (byteB & 0x08) !== 0;
                 }
             }
-
             if (bestSupported >= 0) {
                 document.getElementById('val-mil').innerText = bestMil;
                 document.getElementById('val-tests').innerText = bestReady + " / " + bestSupported + " valmis";
@@ -451,8 +440,6 @@
                 if (document.getElementById('val-fuel-type').innerText === "-") {
                     document.getElementById('val-fuel-type').innerText = isDiesel ? "Diesel" : "Bensiini";
                 }
-            } else {
-                document.getElementById('val-tests').innerText = "Ei dataa";
             }
         }
 
@@ -462,12 +449,7 @@
             if (p[idx+1]) {
                 let fType = parseInt(p[idx+1], 16);
                 let typeStr = "Tuntematon (" + fType + ")";
-                const fuelTypes = {
-                    1: "Bensiini", 4: "Diesel", 5: "LPG", 6: "CNG", 8: "Sähkö",
-                    9: "Bifuel (Bensiini)", 13: "Bifuel (CNG/Kaasu)", 15: "Hybridi (Bensiini)", 
-                    17: "Hybridi (Diesel)", 18: "Hybridi (Sähkö)", 
-                    19: "Hybridi (Bensiini/Sähkö)", 20: "Hybridi (Diesel/Sähkö)"
-                };
+                const fuelTypes = { 1: "Bensiini", 4: "Diesel", 5: "LPG", 6: "CNG", 8: "Sähkö", 9: "Bifuel (Bensiini)", 15: "Hybridi (Bensiini)", 17: "Hybridi (Diesel)" };
                 if (fuelTypes[fType]) typeStr = fuelTypes[fType];
                 document.getElementById('val-fuel-type').innerText = typeStr;
             }
@@ -488,17 +470,6 @@
             }
         }
 
-        if (data.includes("41 14")) {
-            let p = data.split(/\s+/);
-            let idx = p.indexOf("14");
-            if (p[idx+1]) {
-                let volts = (parseInt(p[idx+1], 16) / 200).toFixed(2);
-                if (!lambdaIntegrationOk) {
-                    document.getElementById('val-lambda').innerHTML = `<span style="color:#f59e0b;">Integraatio epäonnistui.</span><br>Jännitetesti OK: ${volts} V`;
-                }
-            }
-        }
-
         if ((data.startsWith("03") || data.startsWith("43") || /\b0:\s*43\b/.test(data)) && !data.startsWith("09")) {
             parseCodes(data, "dtc-stored", "43");
         }
@@ -506,25 +477,10 @@
             parseCodes(data, "dtc-pending", "47");
         }
 
-        if (/01A6\s*NO\s*DATA/.test(data)) {
-            if (document.getElementById('val-obfcm-dist').innerText === "- km") document.getElementById('val-obfcm-dist').innerText = "Ei tuettu";
-        }
-        if (/01A7\s*NO\s*DATA/.test(data)) {
-            if (document.getElementById('val-obfcm-fuel').innerText === "- L") document.getElementById('val-obfcm-fuel').innerText = "Ei tuettu";
-        }
-
-        let currentDist = document.getElementById('val-obfcm-dist').innerText;
-        if (/(?:22F4A6|21A6)\s*7F\s*(?:22|21)\s*(?:31|11|12|22|33)/.test(data) && !/\d/.test(currentDist)) {
-            document.getElementById('val-obfcm-dist').innerText = "Estetty (ECU ei salli lukua)";
-        }
-        let currentFuel = document.getElementById('val-obfcm-fuel').innerText;
-        if (/(?:22F4A7|21A7)\s*7F\s*(?:22|21)\s*(?:31|11|12|22|33)/.test(data) && !/\d/.test(currentFuel)) {
-            document.getElementById('val-obfcm-fuel').innerText = "Estetty (ECU ei salli lukua)";
-        }
-
         let isHybrid = false;
         let isPlugIn = false;
 
+        // OBFCM parsing - Added E1 and F8 as potential targets just in case
         if (updateMaxUI('val-obfcm-dist-off', parseObfcmPayload(data, ["41 A5", "62 F4 A5"], 0.1, 2000000), 'km', 1)) isHybrid = true;
         
         let d_a6 = parseObfcmPayload(data, ["41 A6", "62 F4 A6"], 0.1, 2000000);
@@ -534,13 +490,13 @@
             if (isNaN(cur) || d_a6 > cur) el.innerText = Math.round(d_a6) + " km";
         }
         
-        updateMaxUI('val-obfcm-fuel', parseObfcmPayload(data, ["41 A7", "62 F4 A7"], 0.01, 500000), 'L', 2);
+        updateMaxUI('val-obfcm-fuel', parseObfcmPayload(data, ["41 A7", "62 F4 A7", "41 E1", "62 F4 E1", "41 F8", "62 F4 F8"], 0.01, 500000), 'L', 2);
         
         if (updateMaxUI('val-obfcm-dist-on', parseObfcmPayload(data, ["41 A8", "62 F4 A8"], 0.1, 2000000), 'km', 1)) isHybrid = true;
-        if (updateMaxUI('val-obfcm-dist-charge', parseObfcmPayload(data, ["41 A9", "62 F4 A9"], 0.1, 2000000), 'km', 1)) { isHybrid = true; isPlugIn = true; }
+        if (updateMaxUI('val-obfcm-dist-charge', parseObfcmPayload(data, ["41 A9", "62 F4 A9", "41 E2", "62 F4 E2"], 0.1, 2000000), 'km', 1)) { isHybrid = true; isPlugIn = true; }
         if (updateMaxUI('val-obfcm-fuel-on', parseObfcmPayload(data, ["41 AA", "62 F4 AA"], 0.01, 500000), 'L', 2)) isHybrid = true;
-        if (updateMaxUI('val-obfcm-fuel-charge', parseObfcmPayload(data, ["41 AB", "62 F4 AB"], 0.01, 500000), 'L', 2)) { isHybrid = true; isPlugIn = true; }
-        if (updateMaxUI('val-obfcm-grid', parseObfcmPayload(data, ["41 AC", "62 F4 AC", "49 07"], 0.1, 500000), 'kWh', 1)) { isHybrid = true; isPlugIn = true; }
+        if (updateMaxUI('val-obfcm-fuel-charge', parseObfcmPayload(data, ["41 AB", "62 F4 AB", "41 E3", "62 F4 E3"], 0.01, 500000), 'L', 2)) { isHybrid = true; isPlugIn = true; }
+        if (updateMaxUI('val-obfcm-grid', parseObfcmPayload(data, ["41 AC", "62 F4 AC", "41 E5", "62 F4 E5", "49 07"], 0.1, 500000), 'kWh', 1)) { isHybrid = true; isPlugIn = true; }
 
         if (data.includes("41 5B") || data.includes("62 F4 5B")) {
             let matches = [...data.matchAll(/(?:41 5B|62 F4 5B)\s*([0-9A-F]{2})/g)];
@@ -656,6 +612,8 @@
         document.getElementById('phev-obfcm-section').style.display = 'none';
         
         foundDTCs = [];
+        supportedPIDs.clear();
+        supportedInfoTypes.clear();
         connectionFailed = false; 
         
         document.getElementById('dtc-desc-container').style.display = 'none';
@@ -674,128 +632,145 @@
         await sendCommand("0100", 5000, true); 
         await sendCommand("0100", 5000, true); 
         
-        log("Vaihe 3: Luetaan perusdata...");
-        const cmds = ["ATRV", "0101", "ATDP", "0900", "0902", "03", "07", "0151", "015B", "01A5", "01A6", "01A7", "01A8", "01A9", "01AA", "01AB", "01AC", "22F45B", "0907"];
-        
+        log("Vaihe 3: Luetaan perusdata ja OBFCM-kartta...");
+        // Kysytään KAIKKI tuetut PIDit (OBFCM on täällä ylärekisterissä)
+        const pidBases = ["0120", "0140", "0160", "0180", "01A0", "01C0", "01E0"];
+        for (const b of pidBases) {
+            if (connectionFailed) break;
+            await sendCommand(b, 500, false);
+        }
+
+        const cmds = ["ATRV", "ATDP", "0900", "0902", "03", "07", "0151", "015B", "01A6", "22F45B", "0907"];
         for (const c of cmds) {
-            if (connectionFailed) {
-                log("<span style='color:#ef4444; font-weight:bold;'>YHTEYSVIRHE: ECU ei vastannut.</span>");
-                break;
-            }
+            if (connectionFailed) break;
             let cmdDelay = (c === "0902" || c === "03" || c === "07") ? 1000 : 800;
             await sendCommand(c, cmdDelay, false); 
         }
 
-        if (!connectionFailed) {
-            if (!isObfcmDataFound()) {
-                let proto = document.getElementById('val-proto').innerText;
+        if (!connectionFailed && !isObfcmDataFound()) {
+            let proto = document.getElementById('val-proto').innerText;
+            
+            if (proto.includes("CAN") || proto.includes("15765") || proto.includes("29") || proto === "-") {
+                log("<span style='color:#a855f7'>Vaihe 3.5: OBFCM Harvester -skannaus...</span>");
                 
-                if (proto.includes("CAN") || proto.includes("15765") || proto.includes("29") || proto === "-") {
-                    log("<span style='color:#a855f7'>Vaihe 3.5: Älykäs OBFCM-syväskannaus...</span>");
-                    let restoreHeader = proto.includes("29") ? "AT SH 18DB33F1" : "AT SH 7DF";
-                    
-                    const udsQueries = ["22F4A5", "22F4A6", "22F4A7", "22F4A8", "22F4A9", "22F4AA", "22F4AB", "22F4AC"];
-                    
-                    if (proto.includes("29")) {
-                        // V8.59 FIX: Kaikki 29-bit osoitteet pakotettu tilaan 1001 (Default Session)
-                        let targets = [
-                            {sh: "18DB33F1", cra: "", session: "1001"},              
-                            {sh: "18DA00F1", cra: "18DAF100", session: "1001"},  
-                            {sh: "18DA40F1", cra: "18DAF140", session: "1001"},  
-                            {sh: "18DA10F1", cra: "18DAF110", session: "1001"},  
-                            {sh: "18DA46F1", cra: "18DAF146", session: "1001"},  
-                            {sh: "18DA01F1", cra: "18DAF101", session: "1001"},  
-                            {sh: "18DA02F1", cra: "18DAF102", session: "1001"},
-                            {sh: "18DA03F1", cra: "18DAF103", session: "1001"}
-                        ];
-                        
-                        for (let t of targets) {
-                            if (connectionFailed || isObfcmDataFound()) break;
-                            await sendCommand("AT AR", 400, false);
-                            await sendCommand("AT SH " + t.sh, 400, false);
-                            if (t.cra) await sendCommand("AT CRA " + t.cra, 400, false);
-                            if (t.session) await sendCommand(t.session, 800, false); 
-                            for (let cmd of udsQueries) {
-                                if (connectionFailed || isObfcmDataFound()) break;
-                                await sendCommand(cmd, 400, false);
-                            }
-                        }
-                    } else {
-                        // V8.59 FIX: Kaikki 11-bit osoitteet pakotettu tilaan 1001 (Default Session)
-                        let targets = [
-                            {sh: "7DF", cra: "", session: "1001"},       
-                            {sh: "7E0", cra: "7E8", session: "1001"},    
-                            {sh: "7E2", cra: "7EA", session: "1001"},    
-                            {sh: "7C0", cra: "7C8", session: "1001"},    
-                            {sh: "710", cra: "77A", session: "1001"},    
-                            {sh: "7D0", cra: "7D8", session: "1001"},    
-                            {sh: "714", cra: "77E", session: "1001"},    
-                            {sh: "726", cra: "72E", session: "1001"},    
-                            {sh: "7A0", cra: "7A8", session: "1001"},        
-                            {sh: "7E1", cra: "7E9", session: "1001"},    
-                            {sh: "7E3", cra: "7EB", session: "1001"}         
-                        ];
-                        
-                        for (let t of targets) {
-                            if (connectionFailed || isObfcmDataFound()) {
-                                if (isObfcmDataFound()) log("<span style='color:#10b981'>=> Kaikki tarvittava data löytyi, keskeytetään loppuskannaus!</span>");
-                                break; 
-                            }
-                            
-                            await sendCommand("AT AR", 400, false);
-                            await sendCommand("AT SH " + t.sh, 400, false);
-                            if (t.cra) await sendCommand("AT CRA " + t.cra, 400, false);
-                            
-                            if (t.session) {
-                                await sendCommand(t.session, 800, false); 
-                            }
-                            
-                            for (let cmd of udsQueries) {
-                                if (connectionFailed || isObfcmDataFound()) break;
-                                await sendCommand(cmd, 400, false);
-                            }
-                        }
-                        
-                        if (!connectionFailed && !isObfcmDataFound()) {
-                            log("<span style='color:#f59e0b'>=> Yritetään raskasta WWH-OBD varaprotokollaa...</span>");
-                            await sendCommand("AT SP 7", 800, true);
-                            await sendCommand("AT SH 18DB33F1", 400, false);
-                            await sendCommand("AT AR", 400, false);
-                            await sendCommand("1001", 800, false);
-                            for (let cmd of udsQueries) {
-                                if (connectionFailed || isObfcmDataFound()) break;
-                                await sendCommand(cmd, 400, false);
-                            }
-                            await sendCommand("AT SP 0", 800, true);
-                            await sendCommand("0100", 8000, true); 
-                        }
-                    }
-                    await sendCommand("AT AR", 400, false);
-                    await sendCommand(restoreHeader, 400, false);
-                }
-            } else {
-                log("<span style='color:#10b981'>Kaikki OBFCM-tiedot saatiin jo peruskyselyllä, ohitetaan syväskannaus.</span>");
-            }
+                // Poimitaan vain tuetut PIDit, jotka ovat todennäköisiä OBFCM-arvoja (0x90 ylöspäin)
+                let pidsToQuery = Array.from(supportedPIDs).filter(p => {
+                    let n = parseInt(p, 16);
+                    return n >= 0x90 && ![0xA0, 0xC0, 0xE0].includes(n);
+                });
 
-            if (!connectionFailed) {
-                await sendCommand("0106", 500, false);
-                await sendCommand("0114", 500, false);
-
-                if (needsLambdaTest && lambdaValues.length > 0) {
-                    log("Vaihe 4: Lambdasäädön dynaaminen testi...");
-                    for(let i=0; i<4; i++) {
+                if (pidsToQuery.length > 0) {
+                    log("Löydettiin " + pidsToQuery.length + " tuettua erikoisparametria. Luetaan...");
+                    for (let pid of pidsToQuery) {
                         if (connectionFailed) break;
-                        await sendCommand("0106", 500, false); 
-                        await new Promise(r => setTimeout(r, 300)); 
+                        await sendCommand("01" + pid, 400, false);
                     }
-                    let uniqueValues = new Set(lambdaValues);
-                    let lastVal = lambdaValues[lambdaValues.length - 1];
-                    let valString = lambdaValues.join('% | ') + '%';
-                    if (uniqueValues.size > 1) {
-                        document.getElementById('val-lambda').innerHTML = `<span style="color:#10b981;">Säätö toimii (Vaihtelee):</span> ${lastVal} %<br><span style="font-size:0.75rem; color:#94a3b8;">Mitatut: ${valString}</span>`;
-                    } else {
-                        document.getElementById('val-lambda').innerHTML = `<span style="color:#f59e0b;">Säätö ei reagoi (Staattinen):</span> ${lastVal} %<br><span style="font-size:0.75rem; color:#94a3b8;">Mitatut: ${valString}</span>`;
+                }
+
+                // Etsitään Service 09 tuetut InfoTypet (OBFCM voi olla myös täällä)
+                let itToQuery = Array.from(supportedInfoTypes).filter(it => {
+                    let n = parseInt(it, 16);
+                    return n > 0x00 && n !== 0x02; // Ohitetaan VIN
+                });
+
+                if (itToQuery.length > 0) {
+                    log("Luetaan Service 09 erikoistiedot...");
+                    for (let it of itToQuery) {
+                        if (connectionFailed) break;
+                        await sendCommand("09" + it, 400, false);
                     }
+                }
+
+                // UDS Syväskannaus VAIN auton itse ilmoittamille osoitteille
+                let udsQueries = pidsToQuery.map(p => "22F4" + p);
+                if (udsQueries.length === 0) {
+                    udsQueries = ["22F4A6", "22F4E1", "22F4E2", "22F4E3", "22F4E4", "22F4F8"]; // Hätävara
+                }
+
+                let restoreHeader = proto.includes("29") ? "AT SH 18DB33F1" : "AT SH 7DF";
+                
+                let targets = [];
+                if (proto.includes("29")) {
+                    targets = [
+                        {sh: "18DB33F1", cra: "", session: "1001"},              
+                        {sh: "18DA00F1", cra: "18DAF100", session: "1001"},  
+                        {sh: "18DA40F1", cra: "18DAF140", session: "1001"},  
+                        {sh: "18DA10F1", cra: "18DAF110", session: "1001"},  
+                        {sh: "18DA46F1", cra: "18DAF146", session: "1001"},  
+                        {sh: "18DA01F1", cra: "18DAF101", session: "1001"},  
+                        {sh: "18DA02F1", cra: "18DAF102", session: "1001"},
+                        {sh: "18DA03F1", cra: "18DAF103", session: "1001"}
+                    ];
+                } else {
+                    targets = [
+                        {sh: "7DF", cra: "", session: "1001"},       
+                        {sh: "7E0", cra: "7E8", session: "1001"},    
+                        {sh: "7E2", cra: "7EA", session: "1001"},    
+                        {sh: "7C0", cra: "7C8", session: "1001"},    
+                        {sh: "710", cra: "77A", session: "1001"},    
+                        {sh: "7D0", cra: "7D8", session: "1001"},    
+                        {sh: "714", cra: "77E", session: "1001"},    
+                        {sh: "726", cra: "72E", session: "1001"},    
+                        {sh: "7A0", cra: "7A8", session: "1001"},        
+                        {sh: "7E1", cra: "7E9", session: "1001"},    
+                        {sh: "7E3", cra: "7EB", session: "1001"}         
+                    ];
+                }
+                
+                for (let t of targets) {
+                    if (connectionFailed || isObfcmDataFound()) break;
+                    
+                    await sendCommand("AT AR", 400, false);
+                    await sendCommand("AT SH " + t.sh, 400, false);
+                    if (t.cra) await sendCommand("AT CRA " + t.cra, 400, false);
+                    
+                    if (t.session) {
+                        await sendCommand(t.session, 800, false); 
+                    }
+                    
+                    for (let cmd of udsQueries) {
+                        if (connectionFailed || isObfcmDataFound()) break;
+                        await sendCommand(cmd, 400, false);
+                    }
+                }
+                
+                if (!connectionFailed && !isObfcmDataFound()) {
+                    log("<span style='color:#f59e0b'>=> Yritetään raskasta WWH-OBD varaprotokollaa...</span>");
+                    await sendCommand("AT SP 7", 800, true);
+                    await sendCommand("AT SH 18DB33F1", 400, false);
+                    await sendCommand("AT AR", 400, false);
+                    await sendCommand("1001", 800, false);
+                    for (let cmd of udsQueries) {
+                        if (connectionFailed || isObfcmDataFound()) break;
+                        await sendCommand(cmd, 400, false);
+                    }
+                    await sendCommand("AT SP 0", 800, true);
+                    await sendCommand("0100", 8000, true); 
+                }
+                
+                await sendCommand("AT AR", 400, false);
+                await sendCommand(restoreHeader, 400, false);
+            }
+        }
+
+        if (!connectionFailed) {
+            await sendCommand("0106", 500, false);
+            await sendCommand("0114", 500, false);
+
+            if (needsLambdaTest && lambdaValues.length > 0) {
+                log("Vaihe 4: Lambdasäädön dynaaminen testi...");
+                for(let i=0; i<4; i++) {
+                    if (connectionFailed) break;
+                    await sendCommand("0106", 500, false); 
+                    await new Promise(r => setTimeout(r, 300)); 
+                }
+                let uniqueValues = new Set(lambdaValues);
+                let lastVal = lambdaValues[lambdaValues.length - 1];
+                let valString = lambdaValues.join('% | ') + '%';
+                if (uniqueValues.size > 1) {
+                    document.getElementById('val-lambda').innerHTML = `<span style="color:#10b981;">Säätö toimii (Vaihtelee):</span> ${lastVal} %<br><span style="font-size:0.75rem; color:#94a3b8;">Mitatut: ${valString}</span>`;
+                } else {
+                    document.getElementById('val-lambda').innerHTML = `<span style="color:#f59e0b;">Säätö ei reagoi (Staattinen):</span> ${lastVal} %<br><span style="font-size:0.75rem; color:#94a3b8;">Mitatut: ${valString}</span>`;
                 }
             }
         }
