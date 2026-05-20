@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.63 - The Data Array Fix</title>
+    <title>NexLink Pro v8.64 - PHEV Array Unlocker</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -36,7 +36,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.63</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.64</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -329,11 +329,12 @@
         if (val === null) return false;
         let el = document.getElementById(id);
         let current = parseFloat(el.innerText);
+        // V8.64 Fix: Allow 0 values for PHEV charge metrics
         if (isNaN(current) || val > current) {
             el.innerText = val.toFixed(precision) + " " + unit;
-            return val > 0;
+            return true;
         }
-        return current > 0;
+        return !isNaN(current);
     }
 
     const isObfcmDataFound = () => {
@@ -401,7 +402,6 @@
         }
         if (/0902\s*NO\s*DATA/.test(data)) document.getElementById('val-vin').innerText = "Ei tuettu (Ei ECUssa)";
 
-        // V8.63: Korjattu, pomminvarma ASCII-pohjainen VIN-lukija!
         if (data.includes("49 02")) {
             let tokens = data.replace(/0902/g, '').split(/\s+/);
             let hexBytes = tokens.filter(t => /^[0-9A-F]{2}$/i.test(t));
@@ -409,7 +409,6 @@
             let currentStr = "";
             for(let hex of hexBytes) {
                 let c = parseInt(hex, 16);
-                // ASCII A-Z ja 0-9
                 if((c >= 48 && c <= 57) || (c >= 65 && c <= 90)) { 
                     currentStr += String.fromCharCode(c);
                 } else {
@@ -495,34 +494,76 @@
         if (d_a6 !== null) {
             let el = document.getElementById('val-obfcm-dist');
             let cur = parseFloat(el.innerText);
-            if (isNaN(cur) || d_a6 > cur) el.innerText = Math.round(d_a6) + " km";
+            // V8.64 Fix: Use toFixed(1) to avoid rounding off OPUS decimals
+            if (isNaN(cur) || d_a6 > cur) el.innerText = d_a6.toFixed(1) + " km";
         }
         
-        // V8.63: Korjattu OBFCM generic-lista (poistettu 49 xx -määritykset sekoittamasta)
         updateMaxUI('val-obfcm-fuel', parseObfcmPayload(data, ["41 A7", "62 F4 A7", "41 E1", "62 F4 E1", "41 F8", "62 F4 F8"], 0.01, 500000), 'L', 2);
         
-        // V8.63: Eksplisiittinen ja tarkka Service 09 17 -taulukon purkaja
         if (data.includes("49 17")) {
             let tokens = data.replace(/0917/g, '').split(/\s+/);
             let hexBytes = tokens.filter(t => /^[0-9A-F]{2}$/i.test(t));
             for (let i = 0; i < hexBytes.length - 15; i++) {
                 if (hexBytes[i] === "49" && hexBytes[i+1] === "17") {
-                    // Taulukon rakenne SAE J1979:
-                    // 0..3 Tuntematon/Käyttöaika
-                    // 4..7 OBFCM Kilometrit
-                    // 8..11 Tuntematon/Käyttöaika
-                    // 12..15 OBFCM Litrat
                     let distHex = hexBytes[i+3+4] + hexBytes[i+3+5] + hexBytes[i+3+6] + hexBytes[i+3+7];
                     let fuelHex = hexBytes[i+3+12] + hexBytes[i+3+13] + hexBytes[i+3+14] + hexBytes[i+3+15];
                     
                     if (distHex && distHex !== "FFFFFFFF") {
                         let dist = parseInt(distHex, 16) * 0.1;
-                        if (dist > 0) updateMaxUI('val-obfcm-dist', dist, 'km', 1);
+                        // V8.64 Fix: Use toFixed(1)
+                        if (dist >= 0) {
+                            let el = document.getElementById('val-obfcm-dist');
+                            let cur = parseFloat(el.innerText);
+                            if (isNaN(cur) || dist > cur) el.innerText = dist.toFixed(1) + " km";
+                        }
                     }
                     if (fuelHex && fuelHex !== "FFFFFFFF") {
                         let fuel = parseInt(fuelHex, 16) * 0.01;
-                        if (fuel > 0) updateMaxUI('val-obfcm-fuel', fuel, 'L', 2);
+                        if (fuel >= 0) updateMaxUI('val-obfcm-fuel', fuel, 'L', 2);
                     }
+                }
+            }
+        }
+
+        // V8.64 PHEV Extended Arrays (09 1A, 09 1B, 09 1C)
+        if (data.includes("49 1A")) {
+            let tokens = data.replace(/091A/g, '').split(/\s+/);
+            let hexBytes = tokens.filter(t => /^[0-9A-F]{2}$/i.test(t));
+            for (let i = 0; i < hexBytes.length - 26; i++) {
+                if (hexBytes[i] === "49" && hexBytes[i+1] === "1A") {
+                    let distOffHex = hexBytes[i+7] + hexBytes[i+8] + hexBytes[i+9] + hexBytes[i+10];
+                    let distOnHex = hexBytes[i+15] + hexBytes[i+16] + hexBytes[i+17] + hexBytes[i+18];
+                    let distChargeHex = hexBytes[i+23] + hexBytes[i+24] + hexBytes[i+25] + hexBytes[i+26];
+                    
+                    if (distOffHex && distOffHex !== "FFFFFFFF") { updateMaxUI('val-obfcm-dist-off', parseInt(distOffHex, 16) * 0.1, 'km', 1); isHybrid = true; }
+                    if (distOnHex && distOnHex !== "FFFFFFFF") { updateMaxUI('val-obfcm-dist-on', parseInt(distOnHex, 16) * 0.1, 'km', 1); isHybrid = true; }
+                    if (distChargeHex && distChargeHex !== "FFFFFFFF") { updateMaxUI('val-obfcm-dist-charge', parseInt(distChargeHex, 16) * 0.1, 'km', 1); isHybrid = true; isPlugIn = true; }
+                }
+            }
+        }
+        
+        if (data.includes("49 1B")) {
+            let tokens = data.replace(/091B/g, '').split(/\s+/);
+            let hexBytes = tokens.filter(t => /^[0-9A-F]{2}$/i.test(t));
+            for (let i = 0; i < hexBytes.length - 18; i++) {
+                if (hexBytes[i] === "49" && hexBytes[i+1] === "1B") {
+                    let fuelOnHex = hexBytes[i+7] + hexBytes[i+8] + hexBytes[i+9] + hexBytes[i+10];
+                    let fuelChargeHex = hexBytes[i+15] + hexBytes[i+16] + hexBytes[i+17] + hexBytes[i+18];
+                    
+                    if (fuelOnHex && fuelOnHex !== "FFFFFFFF") { updateMaxUI('val-obfcm-fuel-on', parseInt(fuelOnHex, 16) * 0.01, 'L', 2); isHybrid = true; }
+                    if (fuelChargeHex && fuelChargeHex !== "FFFFFFFF") { updateMaxUI('val-obfcm-fuel-charge', parseInt(fuelChargeHex, 16) * 0.01, 'L', 2); isHybrid = true; isPlugIn = true; }
+                }
+            }
+        }
+
+        if (data.includes("49 1C")) {
+            let tokens = data.replace(/091C/g, '').split(/\s+/);
+            let hexBytes = tokens.filter(t => /^[0-9A-F]{2}$/i.test(t));
+            for (let i = 0; i < hexBytes.length - 22; i++) {
+                if (hexBytes[i] === "49" && hexBytes[i+1] === "1C") {
+                    let gridHex = hexBytes[i+19] + hexBytes[i+20] + hexBytes[i+21] + hexBytes[i+22];
+                    
+                    if (gridHex && gridHex !== "FFFFFFFF") { updateMaxUI('val-obfcm-grid', parseInt(gridHex, 16) * 0.1, 'kWh', 1); isHybrid = true; isPlugIn = true; }
                 }
             }
         }
@@ -674,10 +715,11 @@
             await sendCommand(b, 500, false);
         }
 
-        const cmds = ["ATRV", "0101", "ATDP", "0900", "0902", "03", "07", "0151", "015B", "01A6", "22F45B", "0907", "0917"];
+        // V8.64 Fix: Lisätty 091A, 091B, 091C pakollisiin kyselyihin.
+        const cmds = ["ATRV", "0101", "ATDP", "0900", "0902", "03", "07", "0151", "015B", "01A6", "22F45B", "0907", "0917", "091A", "091B", "091C"];
         for (const c of cmds) {
             if (connectionFailed) break;
-            let cmdDelay = (c === "0902" || c === "03" || c === "07" || c === "0917") ? 1000 : 800;
+            let cmdDelay = (c === "0902" || c === "03" || c === "07" || c.startsWith("091")) ? 1000 : 800;
             await sendCommand(c, cmdDelay, false); 
         }
 
@@ -702,8 +744,7 @@
 
                 let itToQuery = Array.from(supportedInfoTypes).filter(it => {
                     let n = parseInt(it, 16);
-                    // Olemme jo kysyneet 02 (VIN) ja 17 (OBFCM-taulukko)
-                    return n > 0x00 && n !== 0x02 && n !== 0x17; 
+                    return n > 0x00 && n !== 0x02 && n !== 0x17 && n !== 0x1A && n !== 0x1B && n !== 0x1C; 
                 });
 
                 if (itToQuery.length > 0) {
