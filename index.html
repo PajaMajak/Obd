@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.65 - Doris Edition</title>
+    <title>NexLink Pro v8.66 - Doris Automator</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -22,6 +22,8 @@
         .log-buttons button { margin-top: 0; font-size: 0.75rem; padding: 10px; border: 1px solid; flex: 1; transition: background 0.2s; }
         #copyLogBtn { background: #0f766e; border-color: #115e59; }
         #clearLogBtn { background: #334155; border-color: #475569; }
+
+        #copyDorisBtn { background: #10b981; margin-top: 10px; font-size: 0.9rem; }
         
         .dtc-container { background: #0f172a; border-radius: 8px; padding: 10px; border: 1px solid #475569; clear: both; }
         .dtc-section { margin-bottom: 8px; font-size: 0.8rem; }
@@ -36,7 +38,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.65</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.66</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -118,6 +120,8 @@
                     <span id="val-obfcm-grid" class="ev-value">- kWh</span>
                 </div>
             </div>
+            
+            <button id="copyDorisBtn" onclick="copyToDoris()">📋 KOPIOI DORIKSEEN</button>
         </div>
     </div>
 
@@ -258,6 +262,47 @@
                 btn.style.background = "#0f766e"; 
             }, 2000);
         } catch (err) { alert("Kopiointi epäonnistui."); }
+    }
+
+    // V8.66: Doris Automator - Pakkaa datan Doris-ystävälliseen JSON-muotoon
+    function getValForDoris(id) {
+        let el = document.getElementById(id);
+        if (!el) return "";
+        let txt = el.innerText;
+        if (txt.includes('-') || txt.includes('Ei tuettu')) return ""; 
+        let clean = txt.replace(/[^0-9.,]/g, '');
+        return clean.replace('.', ',');
+    }
+
+    async function copyToDoris() {
+        let data = {};
+        let fields = {
+            "Kulutus käyttöikäinen": "val-obfcm-fuel",
+            "Kilometrimäärä käyttöikäinen": "val-obfcm-dist",
+            "Kilometrimäärä moottori sammuksissa": "val-obfcm-dist-off",
+            "Kilometrimäärä moottori käynnissä": "val-obfcm-dist-on",
+            "Kilometrimäärä moottori lataustilassa": "val-obfcm-dist-charge",
+            "Kulutus moottori käynnissä": "val-obfcm-fuel-on",
+            "Kulutus lataustilassa": "val-obfcm-fuel-charge",
+            "Latauksen määrä käyttöikäinen": "val-obfcm-grid"
+        };
+        
+        for (let key in fields) {
+            let v = getValForDoris(fields[key]);
+            if (v !== "") data[key] = v;
+        }
+
+        let jsonStr = JSON.stringify(data);
+        const btn = document.getElementById('copyDorisBtn');
+        try {
+            await navigator.clipboard.writeText(jsonStr);
+            btn.innerText = "✅ KOPIOITU (Siirry Dorikseen)";
+            setTimeout(() => {
+                btn.innerText = "📋 KOPIOI DORIKSEEN";
+            }, 3000);
+        } catch (err) { 
+            alert("Kopiointi epäonnistui. Selain saattaa estää sen."); 
+        }
     }
 
     document.getElementById('connectBtn').addEventListener('click', async () => {
