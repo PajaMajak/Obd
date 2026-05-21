@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.64 - PHEV Array Unlocker</title>
+    <title>NexLink Pro v8.65 - Doris Edition</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -36,7 +36,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.64</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.65</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -78,16 +78,16 @@
             <div class="label" style="margin-bottom: 10px;">OBFCM - Elinikäiset kulutustiedot</div>
             
             <div class="obfcm-row">
-                <span>Käyttöikäinen kulutus:</span> 
+                <span>Kulutus käyttöikäinen:</span> 
                 <span id="val-obfcm-fuel" class="value">- L</span>
             </div>
             <div class="obfcm-row">
-                <span>Käyttöikäinen kilometrimäärä:</span> 
+                <span>Kilometrimäärä käyttöikäinen:</span> 
                 <span id="val-obfcm-dist" class="value">- km</span>
             </div>
 
             <div id="phev-obfcm-section" style="display:none; margin-top: 10px; border-top: 1px dashed #475569; padding-top: 10px;">
-                <div class="label" style="color: #a855f7; margin-bottom: 8px;">Hybridin / EV Erittely</div>
+                <div class="label" style="color: #a855f7; margin-bottom: 8px;">Lataushybrideitä koskevat arvot</div>
                 
                 <div class="obfcm-row">
                     <span>Ajoakun varaus (SOC):</span> 
@@ -114,7 +114,7 @@
                     <span id="val-obfcm-fuel-charge" class="ev-value">- L</span>
                 </div>
                 <div class="obfcm-row" style="border-bottom: none;">
-                    <span>Käyttöikäinen latauksen määrä (Grid):</span> 
+                    <span>Latauksen määrä käyttöikäinen:</span> 
                     <span id="val-obfcm-grid" class="ev-value">- kWh</span>
                 </div>
             </div>
@@ -329,7 +329,6 @@
         if (val === null) return false;
         let el = document.getElementById(id);
         let current = parseFloat(el.innerText);
-        // V8.64 Fix: Allow 0 values for PHEV charge metrics
         if (isNaN(current) || val > current) {
             el.innerText = val.toFixed(precision) + " " + unit;
             return true;
@@ -494,7 +493,6 @@
         if (d_a6 !== null) {
             let el = document.getElementById('val-obfcm-dist');
             let cur = parseFloat(el.innerText);
-            // V8.64 Fix: Use toFixed(1) to avoid rounding off OPUS decimals
             if (isNaN(cur) || d_a6 > cur) el.innerText = d_a6.toFixed(1) + " km";
         }
         
@@ -510,7 +508,6 @@
                     
                     if (distHex && distHex !== "FFFFFFFF") {
                         let dist = parseInt(distHex, 16) * 0.1;
-                        // V8.64 Fix: Use toFixed(1)
                         if (dist >= 0) {
                             let el = document.getElementById('val-obfcm-dist');
                             let cur = parseFloat(el.innerText);
@@ -525,7 +522,6 @@
             }
         }
 
-        // V8.64 PHEV Extended Arrays (09 1A, 09 1B, 09 1C)
         if (data.includes("49 1A")) {
             let tokens = data.replace(/091A/g, '').split(/\s+/);
             let hexBytes = tokens.filter(t => /^[0-9A-F]{2}$/i.test(t));
@@ -715,7 +711,6 @@
             await sendCommand(b, 500, false);
         }
 
-        // V8.64 Fix: Lisätty 091A, 091B, 091C pakollisiin kyselyihin.
         const cmds = ["ATRV", "0101", "ATDP", "0900", "0902", "03", "07", "0151", "015B", "01A6", "22F45B", "0907", "0917", "091A", "091B", "091C"];
         for (const c of cmds) {
             if (connectionFailed) break;
