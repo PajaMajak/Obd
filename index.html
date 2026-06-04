@@ -501,7 +501,7 @@
             if (p[idx+1]) {
                 let fType = parseInt(p[idx+1], 16);
                 let typeStr = "Tuntematon (" + fType + ")";
-                const fuelTypes = { 1: "Bensiini", 4: "Diesel", 5: "LPG", 6: "CNG", 8: "Sähkö", 9: "Bifuel (Bensiini)", 15: "Hybridi (Bensiini)", 17: "Hybridi (Diesel)" };
+                const fuelTypes = { 1: "Bensiini", 4: "Diesel", 5: "LPG", 6: "CNG", 8: "Sähkö", 9: "Bifuel (Bensiini)", 13: "CNG", 15: "Hybridi (Bensiini)", 17: "Hybridi (Diesel)" };
                 if (fuelTypes[fType]) typeStr = fuelTypes[fType];
                 document.getElementById('val-fuel-type').innerText = typeStr;
             }
