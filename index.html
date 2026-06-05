@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexLink Pro v8.66 - Doris Automator</title>
+    <title>NexLink Pro v8.67 - Harvester Force-Scan</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
         .container { max-width: 500px; margin: auto; }
@@ -38,7 +38,7 @@
 <body>
 
 <div class="container">
-    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.66</h2>
+    <h2 style="text-align:center; color: #38bdf8; margin: 10px 0;">NexLink Pro v8.67</h2>
     <button id="connectBtn">YHDISTÄ JA LUE DIAGNOSTIIKKA</button>
 
     <div class="grid">
@@ -264,7 +264,6 @@
         } catch (err) { alert("Kopiointi epäonnistui."); }
     }
 
-    // V8.66: Doris Automator - Pakkaa datan Doris-ystävälliseen JSON-muotoon
     function getValForDoris(id) {
         let el = document.getElementById(id);
         if (!el) return "";
@@ -501,7 +500,7 @@
             if (p[idx+1]) {
                 let fType = parseInt(p[idx+1], 16);
                 let typeStr = "Tuntematon (" + fType + ")";
-                const fuelTypes = { 1: "Bensiini", 4: "Diesel", 5: "LPG", 6: "CNG", 8: "Sähkö", 9: "Bifuel (Bensiini)", 13: "CNG", 15: "Hybridi (Bensiini)", 17: "Hybridi (Diesel)" };
+                const fuelTypes = { 1: "Bensiini", 4: "Diesel", 5: "LPG", 6: "CNG", 8: "Sähkö", 9: "Bifuel (Bensiini)", 15: "Hybridi (Bensiini)", 17: "Hybridi (Diesel)" };
                 if (fuelTypes[fType]) typeStr = fuelTypes[fType];
                 document.getElementById('val-fuel-type').innerText = typeStr;
             }
@@ -756,7 +755,8 @@
             await sendCommand(b, 500, false);
         }
 
-        const cmds = ["ATRV", "0101", "ATDP", "0900", "0902", "03", "07", "0151", "015B", "01A6", "22F45B", "0907", "0917", "091A", "091B", "091C"];
+        // V8.67: Lisätty 0919 logitukseen uteliaisuudesta.
+        const cmds = ["ATRV", "0101", "ATDP", "0900", "0902", "03", "07", "0151", "015B", "01A6", "22F45B", "0907", "0917", "091A", "091B", "091C", "0919"];
         for (const c of cmds) {
             if (connectionFailed) break;
             let cmdDelay = (c === "0902" || c === "03" || c === "07" || c.startsWith("091")) ? 1000 : 800;
@@ -784,7 +784,7 @@
 
                 let itToQuery = Array.from(supportedInfoTypes).filter(it => {
                     let n = parseInt(it, 16);
-                    return n > 0x00 && n !== 0x02 && n !== 0x17 && n !== 0x1A && n !== 0x1B && n !== 0x1C; 
+                    return n > 0x00 && n !== 0x02 && n !== 0x17 && n !== 0x1A && n !== 0x1B && n !== 0x1C && n !== 0x19; 
                 });
 
                 if (itToQuery.length > 0) {
@@ -795,10 +795,12 @@
                     }
                 }
 
+                // V8.67 FIX: Pakotetaan aina kysymään vähintään PHEV UDS PIDs, vaikka auto olisi vastannut muihin (kuten Toyota)
                 let udsQueries = pidsToQuery.map(p => "22F4" + p);
-                if (udsQueries.length === 0) {
-                    udsQueries = ["22F4A6", "22F4E1", "22F4E2", "22F4E3", "22F4E4", "22F4F8"]; 
-                }
+                const phevFallbackPIDs = ["22F4A5", "22F4A6", "22F4E1", "22F4E2", "22F4E3", "22F4E4", "22F4E5", "22F4F8"];
+                phevFallbackPIDs.forEach(pid => {
+                    if (!udsQueries.includes(pid)) udsQueries.push(pid);
+                });
 
                 let restoreHeader = proto.includes("29") ? "AT SH 18DB33F1" : "AT SH 7DF";
                 
